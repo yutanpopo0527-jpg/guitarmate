@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Guitar Mate - ギター練習アプリ</title>
     
+    <!-- Favicon (Guitar Pick Logo) -->
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 95 C 15 80, 5 50, 5 30 A 45 45 0 0 1 95 30 C 95 50, 85 80, 50 95 Z' fill='%23f59e0b'/%3E%3Ccircle cx='50' cy='40' r='12' fill='%23ffffff' opacity='0.9'/%3E%3C/svg%3E">
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
@@ -83,41 +86,34 @@
             const gain = ctx.createGain();
             osc.connect(gain);
             gain.connect(ctx.destination);
-            
-            // Tighter, punchier kick
-            osc.frequency.setValueAtTime(100, time); // Start lower
-            osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.3); // Faster drop
-            
+            osc.frequency.setValueAtTime(100, time);
+            osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.3);
             gain.gain.setValueAtTime(1.0, time);
             gain.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
-            
             osc.start(time); osc.stop(time + 0.3);
         };
 
         const playSnare = (ctx, time, noiseBuffer) => {
-            // Body (Triangle)
             const osc = ctx.createOscillator();
             const oscGain = ctx.createGain();
             osc.type = 'triangle';
             osc.connect(oscGain);
             oscGain.connect(ctx.destination);
-            osc.frequency.setValueAtTime(200, time); // slightly lower
+            osc.frequency.setValueAtTime(200, time);
             oscGain.gain.setValueAtTime(0.3, time);
-            oscGain.gain.exponentialRampToValueAtTime(0.01, time + 0.15); // shorter
+            oscGain.gain.exponentialRampToValueAtTime(0.01, time + 0.15);
             osc.start(time); osc.stop(time + 0.15);
-
-            // Snare wires (Noise) - Cleaner
             const noise = ctx.createBufferSource();
             const noiseFilter = ctx.createBiquadFilter();
             const noiseGain = ctx.createGain();
             noise.buffer = noiseBuffer;
             noiseFilter.type = 'highpass';
-            noiseFilter.frequency.value = 2000; // Higher cutoff for cleaner sound
+            noiseFilter.frequency.value = 2000;
             noise.connect(noiseFilter);
             noiseFilter.connect(noiseGain);
             noiseGain.connect(ctx.destination);
             noiseGain.gain.setValueAtTime(0.6, time);
-            noiseGain.gain.exponentialRampToValueAtTime(0.01, time + 0.2); // Snap!
+            noiseGain.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
             noise.start(time); noise.stop(time + 0.2);
         };
 
@@ -131,10 +127,8 @@
             noise.connect(noiseFilter);
             noiseFilter.connect(noiseGain);
             noiseGain.connect(ctx.destination);
-            
-            const decay = open ? 0.3 : 0.04; // Tighter closed hat
+            const decay = open ? 0.3 : 0.04;
             const volume = open ? 0.25 : 0.2;
-
             noiseGain.gain.setValueAtTime(volume, time);
             noiseGain.gain.exponentialRampToValueAtTime(0.001, time + decay);
             noise.start(time); noise.stop(time + decay);
@@ -378,26 +372,45 @@
             );
         };
 
-        // --- Recorder & BackingTrack & VisualStats (Unchanged Logic, just simplified for length) ---
+        // --- Recorder & BackingTrack & VisualStats (Modified for Error Handling) ---
         const Recorder = ({ setTempAudio }) => {
             const [isRecording, setIsRecording] = useState(false);
             const [audioUrl, setAudioUrl] = useState(null);
             const mediaRecorderRef = useRef(null);
             const audioChunksRef = useRef([]);
+
             const startRecording = async () => {
+                // Check if browser supports MediaDevices and getUserMedia
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    alert("お使いのブラウザは録音機能をサポートしていないか、HTTPS接続ではありません。Chrome, Safari, Edge等の最新版をご利用ください。");
+                    return;
+                }
+
                 try {
-                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                mediaRecorderRef.current = new MediaRecorder(stream);
-                audioChunksRef.current = [];
-                mediaRecorderRef.current.ondataavailable = (event) => { if (event.data.size > 0) audioChunksRef.current.push(event.data); };
-                mediaRecorderRef.current.onstop = async () => {
-                    const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' }); 
-                    setAudioUrl(URL.createObjectURL(audioBlob));
-                    try { setTempAudio(await blobToBase64(audioBlob)); } catch (error) { console.error(error); }
-                    stream.getTracks().forEach(track => track.stop());
-                };
-                mediaRecorderRef.current.start(); setIsRecording(true); setAudioUrl(null); setTempAudio(null); 
-                } catch (err) { alert("マイクへのアクセスが拒否されました。"); }
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    mediaRecorderRef.current = new MediaRecorder(stream);
+                    audioChunksRef.current = [];
+                    mediaRecorderRef.current.ondataavailable = (event) => { if (event.data.size > 0) audioChunksRef.current.push(event.data); };
+                    mediaRecorderRef.current.onstop = async () => {
+                        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' }); 
+                        setAudioUrl(URL.createObjectURL(audioBlob));
+                        try { setTempAudio(await blobToBase64(audioBlob)); } catch (error) { console.error(error); }
+                        stream.getTracks().forEach(track => track.stop());
+                    };
+                    mediaRecorderRef.current.start(); 
+                    setIsRecording(true); 
+                    setAudioUrl(null); 
+                    setTempAudio(null); 
+                } catch (err) { 
+                    console.error("Recording Error:", err);
+                    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                        alert("マイクの使用が許可されていません。\nブラウザのアドレスバーにある鍵アイコンや設定メニューから、このサイトのマイク使用を許可してください。");
+                    } else if (err.name === 'NotFoundError') {
+                        alert("マイクが見つかりませんでした。接続を確認してください。");
+                    } else {
+                        alert("録音の開始に失敗しました: " + err.message + "\nHTTPS接続であることを確認してください。");
+                    }
+                }
             };
             const stopRecording = () => { if (mediaRecorderRef.current) { mediaRecorderRef.current.stop(); setIsRecording(false); } };
             return (
