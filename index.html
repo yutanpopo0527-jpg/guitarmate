@@ -1,0 +1,781 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Guitar Mate - ギター練習アプリ</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel (for JSX) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+        /* Custom Scrollbar Styles */
+        .custom-scrollbar::-webkit-scrollbar { width: 8px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(30, 41, 59, 0.5); border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(71, 85, 105, 0.8); border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.8); }
+        body { background-color: #0f172a; }
+        audio { height: 40px; width: 100%; }
+        audio::-webkit-media-controls-enclosure { background-color: #f1f5f9; border-radius: 4px; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%; background: #f59e0b; margin-top: -4px; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 8px; cursor: pointer; background: #475569; border-radius: 4px; }
+        .heatmap-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+        .badge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+        // --- Helper: Convert Blob to Base64 ---
+        const blobToBase64 = (blob) => new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+
+        // --- Icons ---
+        const IconGuitar = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m9 9 5 12 1.8-5.2L21 14Z"/><path d="M5 15a5 5 0 0 0 10 0"/><path d="M5 15a5 5 0 0 1 10 0"/></svg>);
+        const IconMetronome = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M14.18 19.82 2.82 2.82"/><path d="M21.18 2.82 9.82 19.82"/><path d="M12 2v20"/></svg>);
+        const IconMic = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>);
+        const IconAward = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="8" r="7"/><polyline points="8.21 13.89 7 23 12 20 17 23 15.79 13.88"/></svg>);
+        const IconPlay = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="5 3 19 12 5 21 5 3"/></svg>);
+        const IconPause = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>);
+        const IconPlus = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>);
+        const IconTrash = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg>);
+        const IconClock = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>);
+        const IconCheck = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="20 6 9 17 4 12"/></svg>);
+        const IconActivity = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>);
+        const IconMusic = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>);
+        const IconX = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>);
+        const IconUpload = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>);
+        const IconSettings = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.72v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>);
+        const IconZap = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>);
+        const IconCalendar = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>);
+        const IconList = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>);
+        const IconRewind = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m11 17-5-5 5-5"/><path d="m18 17-5-5 5-5"/></svg>);
+        const IconForward = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m13 17 5-5-5-5"/><path d="m6 17 5-5-5-5"/></svg>);
+        const IconRepeat = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/></svg>);
+        const IconDownload = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>);
+        const IconDatabase = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>);
+
+        // --- Improved Audio Synthesizer Logic ---
+        const createNoiseBuffer = (ctx) => {
+            const bufferSize = ctx.sampleRate * 2; 
+            const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+            const output = buffer.getChannelData(0);
+            for (let i = 0; i < bufferSize; i++) output[i] = Math.random() * 2 - 1;
+            return buffer;
+        };
+
+        const playKick = (ctx, time) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            
+            // Tighter, punchier kick
+            osc.frequency.setValueAtTime(100, time); // Start lower
+            osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.3); // Faster drop
+            
+            gain.gain.setValueAtTime(1.0, time);
+            gain.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
+            
+            osc.start(time); osc.stop(time + 0.3);
+        };
+
+        const playSnare = (ctx, time, noiseBuffer) => {
+            // Body (Triangle)
+            const osc = ctx.createOscillator();
+            const oscGain = ctx.createGain();
+            osc.type = 'triangle';
+            osc.connect(oscGain);
+            oscGain.connect(ctx.destination);
+            osc.frequency.setValueAtTime(200, time); // slightly lower
+            oscGain.gain.setValueAtTime(0.3, time);
+            oscGain.gain.exponentialRampToValueAtTime(0.01, time + 0.15); // shorter
+            osc.start(time); osc.stop(time + 0.15);
+
+            // Snare wires (Noise) - Cleaner
+            const noise = ctx.createBufferSource();
+            const noiseFilter = ctx.createBiquadFilter();
+            const noiseGain = ctx.createGain();
+            noise.buffer = noiseBuffer;
+            noiseFilter.type = 'highpass';
+            noiseFilter.frequency.value = 2000; // Higher cutoff for cleaner sound
+            noise.connect(noiseFilter);
+            noiseFilter.connect(noiseGain);
+            noiseGain.connect(ctx.destination);
+            noiseGain.gain.setValueAtTime(0.6, time);
+            noiseGain.gain.exponentialRampToValueAtTime(0.01, time + 0.2); // Snap!
+            noise.start(time); noise.stop(time + 0.2);
+        };
+
+        const playHiHat = (ctx, time, noiseBuffer, open = false) => {
+            const noise = ctx.createBufferSource();
+            const noiseFilter = ctx.createBiquadFilter();
+            const noiseGain = ctx.createGain();
+            noise.buffer = noiseBuffer;
+            noiseFilter.type = 'highpass';
+            noiseFilter.frequency.value = 8000;
+            noise.connect(noiseFilter);
+            noiseFilter.connect(noiseGain);
+            noiseGain.connect(ctx.destination);
+            
+            const decay = open ? 0.3 : 0.04; // Tighter closed hat
+            const volume = open ? 0.25 : 0.2;
+
+            noiseGain.gain.setValueAtTime(volume, time);
+            noiseGain.gain.exponentialRampToValueAtTime(0.001, time + decay);
+            noise.start(time); noise.stop(time + decay);
+        };
+
+        const playClick = (ctx, time, accent = false) => {
+            const osc = ctx.createOscillator();
+            const gain = ctx.createGain();
+            osc.connect(gain);
+            gain.connect(ctx.destination);
+            osc.frequency.value = accent ? 1200 : 800;
+            gain.gain.setValueAtTime(0.3, time);
+            gain.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+            osc.start(time); osc.stop(time + 0.1);
+        };
+
+        const PATTERNS = {
+            'click': { name: 'メトロノーム', steps: 16, data: [] },
+            '8beat_basic': { 
+                name: '8ビート (王道)', 
+                steps: 16, 
+                data: [
+                    {t:'K',s:0}, {t:'H',s:0}, {t:'H',s:2}, {t:'S',s:4}, {t:'H',s:4}, {t:'H',s:6}, 
+                    {t:'K',s:8}, {t:'H',s:8}, {t:'H',s:10}, {t:'S',s:12}, {t:'H',s:12}, {t:'H',s:14}
+                ] 
+            },
+            '16beat_basic': { 
+                name: '16ビート (王道)', 
+                steps: 16, 
+                data: [
+                    {t:'K',s:0}, {t:'H',s:0}, {t:'H',s:1}, {t:'H',s:2}, {t:'H',s:3}, 
+                    {t:'S',s:4}, {t:'H',s:4}, {t:'H',s:5}, {t:'H',s:6}, {t:'H',s:7},
+                    {t:'K',s:8}, {t:'H',s:8}, {t:'H',s:9}, {t:'H',s:10}, {t:'H',s:11},
+                    {t:'S',s:12}, {t:'H',s:12}, {t:'H',s:13}, {t:'H',s:14}, {t:'H',s:15}
+                ] 
+            },
+            '4onfloor': { 
+                name: '4つ打ち', 
+                steps: 16, 
+                data: [
+                    {t:'K',s:0}, {t:'H',s:2,open:true}, {t:'K',s:4}, {t:'S',s:4}, {t:'H',s:6,open:true}, 
+                    {t:'K',s:8}, {t:'H',s:10,open:true}, {t:'K',s:12}, {t:'S',s:12}, {t:'H',s:14,open:true}
+                ] 
+            },
+            'shuffle': { 
+                name: 'シャッフル', 
+                steps: 16, swing: true, 
+                data: [
+                    {t:'K',s:0}, {t:'H',s:0}, {t:'H',s:2}, {t:'S',s:4}, {t:'H',s:4}, {t:'H',s:6}, 
+                    {t:'K',s:8}, {t:'H',s:8}, {t:'H',s:10}, {t:'S',s:12}, {t:'H',s:12}, {t:'H',s:14}
+                ] 
+            }
+        };
+
+        const TEMPLATES = [
+            { id: 'chromatic', label: '基礎：クロマチックスケール', content: 'クロマチックスケール 運指練習', duration: 10, bpm: 100 },
+            { id: 'c_major', label: '基礎：Cメジャースケール', content: 'Cメジャースケール 上昇・下降', duration: 15, bpm: 90 },
+            { id: 'chords_open', label: 'コード：オープンコード', content: 'C, G, D, Em, Am オープンコードチェンジ', duration: 20, bpm: 80 },
+            { id: 'chords_barre', label: 'コード：バレーコード', content: 'F, Bm バレーコード耐久', duration: 15, bpm: 0 },
+            { id: 'arpeggio', label: 'テクニック：アルペジオ', content: '指弾きアルペジオ パターン練習', duration: 20, bpm: 80 },
+            { id: 'song_practice', label: '曲練習：課題曲通し', content: '課題曲 通し練習', duration: 30, bpm: 0 }
+        ];
+
+        // --- Metronome Component ---
+        const Metronome = () => {
+            const [bpm, setBpm] = useState(120);
+            const [isPlaying, setIsPlaying] = useState(false);
+            const [selectedPattern, setSelectedPattern] = useState('click');
+            const [trainerMode, setTrainerMode] = useState(false);
+            const [targetBpm, setTargetBpm] = useState(140);
+            const [barsPerStep, setBarsPerStep] = useState(4);
+            const [bpmIncrement, setBpmIncrement] = useState(5);
+            const [currentBarCount, setCurrentBarCount] = useState(0); 
+            const [isCountingIn, setIsCountingIn] = useState(false);
+
+            const audioCtx = useRef(null);
+            const noiseBuffer = useRef(null);
+            const schedulerId = useRef(null);
+            const nextNoteTime = useRef(0);
+            const current16thNote = useRef(0);
+            const internalBpm = useRef(120);
+            const trainerState = useRef({ active: false, target: 140, barsStep: 4, increment: 5, counter: 0, countInActive: false });
+
+            const initAudio = () => {
+                if (!audioCtx.current) {
+                    const Ctx = window.AudioContext || window.webkitAudioContext;
+                    audioCtx.current = new Ctx();
+                    noiseBuffer.current = createNoiseBuffer(audioCtx.current);
+                }
+                if (audioCtx.current.state === 'suspended') audioCtx.current.resume();
+            };
+
+            const scheduleNote = (beatNumber, time) => {
+                const ctx = audioCtx.current;
+                
+                // Trainer Logic
+                if (beatNumber === 0 && trainerState.current.active && !trainerState.current.countInActive) {
+                    trainerState.current.counter++;
+                    setCurrentBarCount(trainerState.current.counter);
+                    if (trainerState.current.counter > trainerState.current.barsStep) {
+                        if (internalBpm.current < trainerState.current.target) {
+                            trainerState.current.countInActive = true;
+                            trainerState.current.counter = 0;
+                            setIsCountingIn(true);
+                            let nextBpm = internalBpm.current + trainerState.current.increment;
+                            if (nextBpm > trainerState.current.target) nextBpm = trainerState.current.target;
+                            internalBpm.current = nextBpm;
+                            setBpm(nextBpm);
+                        }
+                    }
+                }
+
+                if (trainerState.current.countInActive) {
+                    if (beatNumber % 4 === 0) playClick(ctx, time, true);
+                    if (beatNumber === 15) {
+                         trainerState.current.countInActive = false;
+                         setIsCountingIn(false);
+                         setCurrentBarCount(1);
+                    }
+                    return;
+                }
+
+                if (selectedPattern === 'click') {
+                    if (beatNumber % 4 === 0) playClick(ctx, time, beatNumber === 0);
+                } else {
+                    const pattern = PATTERNS[selectedPattern];
+                    if (!pattern) return;
+                    let playTime = time;
+                    if (pattern.swing && [2, 6, 10, 14].includes(beatNumber)) {
+                        const sixteenthTime = (60 / internalBpm.current) / 4;
+                        playTime += sixteenthTime * 0.33; 
+                    }
+                    pattern.data.forEach(note => {
+                        if (note.s === beatNumber) {
+                            if (note.t === 'K') playKick(ctx, playTime);
+                            if (note.t === 'S') playSnare(ctx, playTime, noiseBuffer.current);
+                            if (note.t === 'H') playHiHat(ctx, playTime, noiseBuffer.current, note.open);
+                        }
+                    });
+                }
+            };
+
+            const scheduler = () => {
+                while (nextNoteTime.current < audioCtx.current.currentTime + 0.1) {
+                    scheduleNote(current16thNote.current, nextNoteTime.current);
+                    const secondsPerBeat = 60.0 / internalBpm.current;
+                    nextNoteTime.current += secondsPerBeat * 0.25;
+                    current16thNote.current = (current16thNote.current + 1) % 16;
+                }
+                schedulerId.current = window.setTimeout(scheduler, 25);
+            };
+
+            const togglePlay = () => {
+                if (isPlaying) {
+                    setIsPlaying(false);
+                    setIsCountingIn(false);
+                    window.clearTimeout(schedulerId.current);
+                } else {
+                    initAudio();
+                    setIsPlaying(true);
+                    current16thNote.current = 0;
+                    nextNoteTime.current = audioCtx.current.currentTime + 0.05;
+                    internalBpm.current = parseInt(bpm);
+                    trainerState.current = {
+                        active: trainerMode,
+                        target: parseInt(targetBpm),
+                        barsStep: parseInt(barsPerStep),
+                        increment: parseInt(bpmIncrement),
+                        counter: 1,
+                        countInActive: false
+                    };
+                    setCurrentBarCount(1);
+                    scheduler();
+                }
+            };
+
+            useEffect(() => { if (!trainerMode) internalBpm.current = bpm; }, [bpm, trainerMode]);
+            useEffect(() => {
+                if(isPlaying && trainerMode) {
+                    trainerState.current.target = parseInt(targetBpm);
+                    trainerState.current.barsStep = parseInt(barsPerStep);
+                    trainerState.current.increment = parseInt(bpmIncrement);
+                    trainerState.current.active = true;
+                }
+            }, [targetBpm, barsPerStep, bpmIncrement, isPlaying, trainerMode]);
+
+            return (
+                <div className="bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700">
+                    <div className="flex justify-between items-start mb-4">
+                        <div className="flex items-center space-x-2">
+                            <IconMetronome className="text-amber-500 w-6 h-6" />
+                            <h2 className="text-xl font-bold text-white">リズム & ドラム</h2>
+                        </div>
+                        <div className={`px-2 py-0.5 rounded text-xs font-bold ${isCountingIn ? 'bg-rose-500 text-white animate-pulse' : 'bg-transparent text-transparent'}`}>COUNT IN</div>
+                    </div>
+                    
+                    <div className="flex flex-col items-center mb-6 bg-slate-900/50 p-4 rounded-lg border border-slate-700/50 relative overflow-hidden">
+                        <div className="flex items-baseline space-x-2 z-10">
+                             <span className="text-5xl font-mono text-amber-500 font-bold">{bpm}</span>
+                             <span className="text-sm text-slate-400">BPM</span>
+                        </div>
+                        {trainerMode && isPlaying && (
+                            <div className="text-xs text-slate-400 mt-1 z-10 flex gap-4">
+                                <span>Target: {targetBpm}</span>
+                                <span className={isCountingIn ? "text-slate-600" : "text-emerald-400"}>Bar: {currentBarCount}/{barsPerStep}</span>
+                            </div>
+                        )}
+                        <div className={`absolute bottom-0 left-0 h-1 bg-amber-500 transition-all duration-75 ${isPlaying ? 'opacity-100' : 'opacity-0'}`} style={{width: '100%', transform: `scaleX(${isPlaying ? (current16thNote.current % 4 === 0 ? 1 : 0) : 0})`}}></div>
+                    </div>
+
+                    <div className="space-y-4">
+                        <div>
+                            <label className="text-xs text-slate-400 mb-1 block">リズムパターン</label>
+                            <select value={selectedPattern} onChange={(e) => setSelectedPattern(e.target.value)} className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
+                                {Object.keys(PATTERNS).map(key => (<option key={key} value={key}>{PATTERNS[key].name}</option>))}
+                            </select>
+                        </div>
+                        <div>
+                            <input type="range" min="40" max="240" value={bpm} onChange={(e) => { setBpm(e.target.value); if(trainerMode) setTrainerMode(false); }} className="w-full h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-amber-500"/>
+                        </div>
+                        <div className="bg-slate-700/30 p-3 rounded border border-slate-600/50">
+                            <div className="flex items-center justify-between mb-3">
+                                <span className="text-sm font-bold text-slate-300 flex items-center"><IconSettings className="w-4 h-4 mr-1"/> スピードトレーナー</span>
+                                <button onClick={() => setTrainerMode(!trainerMode)} className={`w-10 h-5 rounded-full relative transition-colors ${trainerMode ? 'bg-emerald-500' : 'bg-slate-600'}`}>
+                                    <div className={`w-3 h-3 bg-white rounded-full absolute top-1 transition-transform ${trainerMode ? 'left-6' : 'left-1'}`}></div>
+                                </button>
+                            </div>
+                            {trainerMode && (
+                                <div className="grid grid-cols-3 gap-2 text-xs">
+                                    <div><label className="block text-slate-500 mb-1">目標BPM</label><input type="number" value={targetBpm} onChange={e=>setTargetBpm(e.target.value)} className="w-full bg-slate-800 rounded px-2 py-1 text-white border border-slate-600" /></div>
+                                    <div><label className="block text-slate-500 mb-1">小節数</label><input type="number" value={barsPerStep} onChange={e=>setBarsPerStep(e.target.value)} className="w-full bg-slate-800 rounded px-2 py-1 text-white border border-slate-600" /></div>
+                                    <div><label className="block text-slate-500 mb-1">上昇幅</label><input type="number" value={bpmIncrement} onChange={e=>setBpmIncrement(e.target.value)} className="w-full bg-slate-800 rounded px-2 py-1 text-white border border-slate-600" /></div>
+                                </div>
+                            )}
+                        </div>
+                        <button onClick={togglePlay} className={`w-full py-3 rounded-lg font-bold flex items-center justify-center transition-all ${isPlaying ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-amber-500 hover:bg-amber-600 text-slate-900'}`}>
+                            {isPlaying ? <><IconPause className="mr-2"/> 停止</> : <><IconPlay className="mr-2"/> スタート</>}
+                        </button>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Recorder & BackingTrack & VisualStats (Unchanged Logic, just simplified for length) ---
+        const Recorder = ({ setTempAudio }) => {
+            const [isRecording, setIsRecording] = useState(false);
+            const [audioUrl, setAudioUrl] = useState(null);
+            const mediaRecorderRef = useRef(null);
+            const audioChunksRef = useRef([]);
+            const startRecording = async () => {
+                try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorderRef.current = new MediaRecorder(stream);
+                audioChunksRef.current = [];
+                mediaRecorderRef.current.ondataavailable = (event) => { if (event.data.size > 0) audioChunksRef.current.push(event.data); };
+                mediaRecorderRef.current.onstop = async () => {
+                    const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' }); 
+                    setAudioUrl(URL.createObjectURL(audioBlob));
+                    try { setTempAudio(await blobToBase64(audioBlob)); } catch (error) { console.error(error); }
+                    stream.getTracks().forEach(track => track.stop());
+                };
+                mediaRecorderRef.current.start(); setIsRecording(true); setAudioUrl(null); setTempAudio(null); 
+                } catch (err) { alert("マイクへのアクセスが拒否されました。"); }
+            };
+            const stopRecording = () => { if (mediaRecorderRef.current) { mediaRecorderRef.current.stop(); setIsRecording(false); } };
+            return (
+                <div className="bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700">
+                <div className="flex items-center space-x-2 mb-4"><IconMic className="text-rose-500 w-6 h-6" /><h2 className="text-xl font-bold text-white">クイック録音</h2></div>
+                <div className="flex flex-col items-center justify-center h-40 bg-slate-900 rounded-lg border border-slate-700 mb-4 overflow-hidden relative">
+                    {isRecording && (<div className="absolute inset-0 flex items-center justify-center"><div className="animate-pulse w-24 h-24 bg-rose-500/20 rounded-full blur-xl"></div><span className="relative z-10 text-rose-500 font-mono animate-pulse">RECORDING...</span></div>)}
+                    {!isRecording && !audioUrl && (<div className="text-center p-4"><p className="text-slate-500 text-sm mb-1">演奏を録音してログに残せます</p></div>)}
+                    {!isRecording && audioUrl && (<div className="w-full flex flex-col items-center justify-center p-2"><audio controls src={audioUrl} className="w-11/12 h-8 mb-2" /><span className="text-emerald-400 text-xs flex items-center"><IconCheck className="w-3 h-3 mr-1"/> 添付済み</span></div>)}
+                </div>
+                <button onClick={isRecording ? stopRecording : startRecording} className={`w-full py-3 rounded-lg font-bold flex items-center justify-center transition-all ${isRecording ? 'bg-slate-700 hover:bg-slate-600 text-white border border-rose-500/50' : 'bg-rose-500 hover:bg-rose-600 text-white'}`}>{isRecording ? <><IconCheck className="mr-2"/> 完了</> : <><IconMic className="mr-2"/> 録音開始</>}</button></div>
+            );
+        };
+
+        const BackingTrack = () => {
+            const [audioSrc, setAudioSrc] = useState(null);
+            const [fileName, setFileName] = useState("");
+            const [playbackRate, setPlaybackRate] = useState(1.0);
+            const [pitchShift, setPitchShift] = useState(0); 
+            const [preservesPitch, setPreservesPitch] = useState(true);
+            const [audioBuffer, setAudioBuffer] = useState(null);
+            const [loopA, setLoopA] = useState(null);
+            const [loopB, setLoopB] = useState(null);
+            const [currentTime, setCurrentTime] = useState(0);
+            const audioRef = useRef(null);
+            const canvasRef = useRef(null);
+            const animationRef = useRef(null);
+            const handleFileChange = async (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    setAudioSrc(URL.createObjectURL(file)); setFileName(file.name); setPlaybackRate(1.0); setPitchShift(0); setPreservesPitch(true); setLoopA(null); setLoopB(null);
+                    try {
+                        const arrayBuffer = await file.slice(0).arrayBuffer();
+                        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+                        const decoded = await ctx.decodeAudioData(arrayBuffer);
+                        setAudioBuffer(decoded);
+                    } catch(err) { console.error("Decode error", err); }
+                }
+            };
+            const updateAudio = (rate, pitch, preserve) => { if (audioRef.current) { audioRef.current.preservesPitch = preserve; audioRef.current.mozPreservesPitch = preserve; audioRef.current.webkitPreservesPitch = preserve; if (preserve) audioRef.current.playbackRate = rate; else audioRef.current.playbackRate = rate * Math.pow(2, pitch / 12); } };
+            const handleRateChange = (e) => { const val = parseFloat(e.target.value); setPlaybackRate(val); updateAudio(val, pitchShift, preservesPitch); };
+            const handlePitchChange = (e) => { const val = parseInt(e.target.value); setPitchShift(val); if (val !== 0 && preservesPitch) { setPreservesPitch(false); updateAudio(playbackRate, val, false); } else updateAudio(playbackRate, val, preservesPitch); };
+            const togglePreserve = () => { const newVal = !preservesPitch; setPreservesPitch(newVal); if (newVal) setPitchShift(0); updateAudio(playbackRate, newVal ? 0 : pitchShift, newVal); };
+            const seek = (seconds) => { if(audioRef.current) { let newTime = audioRef.current.currentTime + seconds; if(newTime < 0) newTime = 0; audioRef.current.currentTime = newTime; } };
+            const setPointA = () => { if(audioRef.current) { const t = audioRef.current.currentTime; if (loopB !== null && t >= loopB) setLoopB(null); setLoopA(t); } };
+            const setPointB = () => { if(audioRef.current) { const t = audioRef.current.currentTime; if (loopA !== null && t <= loopA) return; setLoopB(t); } };
+            const clearLoop = () => { setLoopA(null); setLoopB(null); };
+            const drawWaveform = useCallback(() => {
+                const canvas = canvasRef.current; if (!canvas || !audioBuffer) return;
+                const ctx = canvas.getContext('2d'); const width = canvas.width; const height = canvas.height;
+                const data = audioBuffer.getChannelData(0); const step = Math.ceil(data.length / width); const amp = height / 2;
+                ctx.clearRect(0, 0, width, height); ctx.fillStyle = '#475569'; ctx.beginPath();
+                for (let i = 0; i < width; i++) { let min = 1.0; let max = -1.0; for (let j = 0; j < step; j++) { const datum = data[i * step + j]; if (datum < min) min = datum; if (datum > max) max = datum; } ctx.fillRect(i, (1 + min) * amp, 1, Math.max(1, (max - min) * amp)); }
+                if (loopA !== null) { const xA = (loopA / audioBuffer.duration) * width; const xB = loopB !== null ? (loopB / audioBuffer.duration) * width : width; ctx.fillStyle = 'rgba(236, 72, 153, 0.2)'; ctx.fillRect(xA, 0, xB - xA, height); ctx.fillStyle = '#db2777'; ctx.fillRect(xA, 0, 2, height); if (loopB !== null) ctx.fillRect(xB - 2, 0, 2, height); }
+                const x = (currentTime / audioBuffer.duration) * width; ctx.fillStyle = '#34d399'; ctx.fillRect(x, 0, 2, height);
+            }, [audioBuffer, loopA, loopB, currentTime]);
+            useEffect(() => { const animate = () => { if (audioRef.current) { const curr = audioRef.current.currentTime; setCurrentTime(curr); if (loopA !== null && loopB !== null && curr >= loopB) audioRef.current.currentTime = loopA; drawWaveform(); } animationRef.current = requestAnimationFrame(animate); }; if (audioBuffer) animationRef.current = requestAnimationFrame(animate); return () => cancelAnimationFrame(animationRef.current); }, [audioBuffer, loopA, loopB, drawWaveform]);
+            const handleCanvasClick = (e) => { if (!audioRef.current || !audioBuffer) return; const rect = canvasRef.current.getBoundingClientRect(); const x = e.clientX - rect.left; const newTime = (x / rect.width) * audioBuffer.duration; audioRef.current.currentTime = newTime; setCurrentTime(newTime); };
+            return (
+                <div className="col-span-1 md:col-span-2 bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700">
+                    <div className="flex items-center space-x-2 mb-4"><IconMusic className="text-pink-400 w-6 h-6" /><h2 className="text-xl font-bold text-white">バッキングトラック (mp3/wav)</h2></div>
+                    <div className="bg-slate-900/50 p-6 rounded-lg border border-slate-700/50 flex flex-col items-center justify-center">
+                        {!audioSrc ? ( <div className="w-full h-32 border-2 border-dashed border-slate-600 rounded-lg flex flex-col items-center justify-center text-slate-500 hover:border-pink-400 hover:text-pink-400 transition-colors relative group bg-slate-800/50"><IconUpload className="w-10 h-10 mb-3 group-hover:scale-110 transition-transform" /><span className="font-bold">ファイルを選択</span><input type="file" accept="audio/*" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"/></div> ) : (
+                            <div className="w-full">
+                                <div className="flex justify-between items-center mb-3"><span className="text-sm text-slate-300 truncate font-mono max-w-[200px]">{fileName}</span><button onClick={() => { setAudioSrc(null); setFileName(""); setAudioBuffer(null); }} className="text-xs text-red-400 border border-red-400/30 px-2 py-1 rounded">解除</button></div>
+                                <div className="relative w-full h-24 bg-slate-800 rounded border border-slate-700 mb-4 overflow-hidden cursor-crosshair"><canvas ref={canvasRef} width={800} height={100} className="w-full h-full" onClick={handleCanvasClick} />{!audioBuffer && <div className="absolute inset-0 flex items-center justify-center text-xs text-slate-500">波形を生成中...</div>}</div>
+                                <audio ref={audioRef} src={audioSrc} className="hidden" />
+                                <div className="flex items-center justify-center gap-4 mb-6">
+                                    <button onClick={() => seek(-10)} className="flex flex-col items-center text-slate-400 hover:text-white transition-colors group"><IconRewind className="w-6 h-6 mb-1 group-hover:scale-110 transition-transform" /><span className="text-[10px] font-bold">-10s</span></button>
+                                    <button onClick={() => seek(-5)} className="flex flex-col items-center text-slate-400 hover:text-white transition-colors group"><IconRewind className="w-5 h-5 mb-1 group-hover:scale-110 transition-transform" /><span className="text-[10px] font-bold">-5s</span></button>
+                                    <button onClick={() => { if(audioRef.current.paused) audioRef.current.play(); else audioRef.current.pause(); }} className="w-14 h-14 bg-pink-500 hover:bg-pink-400 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-105 text-white">{audioRef.current && !audioRef.current.paused ? <IconPause className="w-6 h-6" /> : <IconPlay className="w-6 h-6 ml-1" />}</button>
+                                    <button onClick={() => seek(5)} className="flex flex-col items-center text-slate-400 hover:text-white transition-colors group"><IconForward className="w-5 h-5 mb-1 group-hover:scale-110 transition-transform" /><span className="text-[10px] font-bold">+5s</span></button>
+                                    <button onClick={() => seek(10)} className="flex flex-col items-center text-slate-400 hover:text-white transition-colors group"><IconForward className="w-6 h-6 mb-1 group-hover:scale-110 transition-transform" /><span className="text-[10px] font-bold">+10s</span></button>
+                                </div>
+                                <div className="bg-slate-800 p-3 rounded border border-slate-700 mb-4">
+                                    <div className="flex justify-between items-center mb-2"><span className="text-xs font-bold text-slate-400 flex items-center"><IconRepeat className="w-3 h-3 mr-1" /> A-B LOOP</span>{loopA !== null && <button onClick={clearLoop} className="text-[10px] text-red-400 hover:underline">クリア</button>}</div>
+                                    <div className="flex gap-2"><button onClick={setPointA} className={`flex-1 py-2 rounded text-xs font-bold border ${loopA !== null ? 'bg-pink-500/20 border-pink-500 text-pink-400' : 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600'}`}>A</button><button onClick={setPointB} disabled={loopA === null} className={`flex-1 py-2 rounded text-xs font-bold border ${loopB !== null ? 'bg-pink-500/20 border-pink-500 text-pink-400' : 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600 disabled:opacity-50'}`}>B</button></div>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div className="bg-slate-800 p-3 rounded border border-slate-700"><div className="flex justify-between items-center mb-2"><span className="text-xs font-bold text-slate-400">SPEED</span><span className="text-sm font-mono text-pink-400 font-bold">x{playbackRate.toFixed(2)}</span></div><input type="range" min="0.5" max="1.5" step="0.05" value={playbackRate} onChange={handleRateChange} className="w-full h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-pink-500" /></div>
+                                    <div className={`bg-slate-800 p-3 rounded border ${!preservesPitch ? 'border-pink-500/50' : 'border-slate-700'}`}><div className="flex justify-between items-center mb-2"><span className="text-xs font-bold text-slate-400">KEY</span><div className="flex items-center gap-2"><button onClick={togglePreserve} className={`text-[10px] px-1.5 py-0.5 rounded border ${preservesPitch ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-slate-700 text-slate-500 border-slate-600'}`}>{preservesPitch ? "固定中" : "可変"}</button><span className={`text-sm font-mono font-bold ${pitchShift > 0 ? 'text-emerald-400' : pitchShift < 0 ? 'text-rose-400' : 'text-slate-400'}`}>{pitchShift > 0 ? '+' : ''}{pitchShift}</span></div></div><input type="range" min="-6" max="6" step="1" value={pitchShift} onChange={handlePitchChange} disabled={preservesPitch && pitchShift === 0} className={`w-full h-2 rounded-lg appearance-none cursor-pointer ${preservesPitch && pitchShift === 0 ? 'bg-slate-700 accent-slate-500' : 'bg-slate-600 accent-emerald-500'}`} /></div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        };
+
+        const VisualStats = ({ logs }) => {
+            const days = useMemo(() => {
+                const result = [];
+                for (let i = 27; i >= 0; i--) {
+                    const d = new Date(); d.setDate(d.getDate() - i);
+                    const dateStr = d.toLocaleDateString('ja-JP');
+                    const duration = logs.filter(l => l.date === dateStr).reduce((acc, curr) => acc + curr.duration, 0);
+                    result.push({ date: dateStr, duration });
+                }
+                return result;
+            }, [logs]);
+            return (
+                <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 mb-6">
+                    <div className="flex items-center space-x-2 mb-4"><IconCalendar className="text-emerald-400 w-5 h-5" /><h3 className="text-sm font-bold text-white">直近4週間の活動</h3></div>
+                    <div className="heatmap-grid">{days.map((day, i) => { let color = 'bg-slate-800 border-slate-700'; if (day.duration > 0) color = 'bg-emerald-900 border-emerald-800'; if (day.duration > 15) color = 'bg-emerald-700 border-emerald-600'; if (day.duration > 45) color = 'bg-emerald-500 border-emerald-400'; if (day.duration > 90) color = 'bg-emerald-400 border-emerald-300'; return (<div key={i} className={`h-8 rounded border ${color} relative group transition-all hover:scale-105`}><div className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-black text-white text-xs rounded whitespace-nowrap z-10 pointer-events-none">{day.date.split('/')[1]}/{day.date.split('/')[2]}: {day.duration}分</div></div>) })}</div>
+                </div>
+            );
+        };
+
+        // --- EXTENDED BADGE LOGIC (100+ conditions) ---
+        const ALL_BADGES = [
+            // Time Milestones
+            { id: 't1', name: '初めの一歩', desc: '最初の練習', check: (l,m) => l.length >= 1, color: 'text-emerald-300' },
+            { id: 't2', name: '3時間経過', desc: '総練習3時間', check: (l,m) => m >= 180, color: 'text-emerald-400' },
+            { id: 't3', name: '10時間経過', desc: '総練習10時間', check: (l,m) => m >= 600, color: 'text-emerald-500' },
+            { id: 't4', name: '24時間テレビ', desc: '丸一日分の練習', check: (l,m) => m >= 1440, color: 'text-emerald-600' },
+            { id: 't5', name: '50時間', desc: '習慣の力', check: (l,m) => m >= 3000, color: 'text-teal-400' },
+            { id: 't6', name: '100時間', desc: '努力の結晶', check: (l,m) => m >= 6000, color: 'text-teal-500' },
+            { id: 't7', name: '300時間', desc: '中級者への道', check: (l,m) => m >= 18000, color: 'text-teal-600' },
+            { id: 't8', name: '500時間', desc: 'セミプロ級', check: (l,m) => m >= 30000, color: 'text-purple-500' },
+            { id: 't9', name: '1000時間', desc: '達人への道', check: (l,m) => m >= 60000, color: 'text-purple-600' },
+            { id: 't10', name: '10000時間', desc: 'マエストロ', check: (l,m) => m >= 600000, color: 'text-yellow-500' },
+
+            // Count Milestones
+            { id: 'c1', name: '三日坊主回避', desc: '3回記録', check: (l) => l.length >= 3, color: 'text-blue-300' },
+            { id: 'c2', name: '10回記録', desc: '10回記録', check: (l) => l.length >= 10, color: 'text-blue-400' },
+            { id: 'c3', name: '30回記録', desc: '30回記録', check: (l) => l.length >= 30, color: 'text-blue-500' },
+            { id: 'c4', name: '50回記録', desc: '50回記録', check: (l) => l.length >= 50, color: 'text-blue-600' },
+            { id: 'c5', name: '100回記録', desc: '100回記録', check: (l) => l.length >= 100, color: 'text-indigo-400' },
+            { id: 'c6', name: '200回記録', desc: '200回記録', check: (l) => l.length >= 200, color: 'text-indigo-500' },
+            { id: 'c7', name: '365回記録', desc: '毎日コツコツ', check: (l) => l.length >= 365, color: 'text-indigo-600' },
+            
+            // Duration Specifics
+            { id: 'd1', name: 'サクッと', desc: '5分以下の練習', check: (l) => l.some(x => x.duration <= 5), color: 'text-amber-300' },
+            { id: 'd2', name: '標準セット', desc: '30分の練習', check: (l) => l.some(x => x.duration === 30), color: 'text-amber-400' },
+            { id: 'd3', name: 'ガッツリ', desc: '60分以上の練習', check: (l) => l.some(x => x.duration >= 60), color: 'text-amber-500' },
+            { id: 'd4', name: 'ロングラン', desc: '90分以上の練習', check: (l) => l.some(x => x.duration >= 90), color: 'text-amber-600' },
+            { id: 'd5', name: 'マラソン', desc: '120分以上の練習', check: (l) => l.some(x => x.duration >= 120), color: 'text-red-400' },
+            { id: 'd6', name: '耐久レース', desc: '180分以上の練習', check: (l) => l.some(x => x.duration >= 180), color: 'text-red-500' },
+
+            // Time of Day
+            { id: 'h1', name: '早起き鳥', desc: '4:00-5:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h >= 4 && h < 6; }), color: 'text-sky-400' },
+            { id: 'h2', name: '朝活', desc: '6:00-8:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h >= 6 && h < 9; }), color: 'text-sky-500' },
+            { id: 'h3', name: 'ランチタイム', desc: '12:00-12:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h === 12; }), color: 'text-yellow-400' },
+            { id: 'h4', name: '午後ティー', desc: '15:00-15:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h === 15; }), color: 'text-orange-300' },
+            { id: 'h5', name: '夕暮れ', desc: '17:00-18:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h >= 17 && h < 19; }), color: 'text-orange-500' },
+            { id: 'h6', name: 'プライムタイム', desc: '20:00-21:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h >= 20 && h < 22; }), color: 'text-indigo-400' },
+            { id: 'h7', name: '夜更かし', desc: '23:00-0:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h === 23 || h === 0; }), color: 'text-indigo-600' },
+            { id: 'h8', name: '丑三つ時', desc: '1:00-3:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h >= 1 && h < 4; }), color: 'text-purple-700' },
+
+            // Days of Week
+            { id: 'w1', name: 'ブルーマンデー', desc: '月曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 1), color: 'text-blue-400' },
+            { id: 'w2', name: '火曜サスペンス', desc: '火曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 2), color: 'text-red-400' },
+            { id: 'w3', name: '水曜どうでしょう', desc: '水曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 3), color: 'text-cyan-400' },
+            { id: 'w4', name: '木曜の安らぎ', desc: '木曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 4), color: 'text-green-400' },
+            { id: 'w5', name: '華金', desc: '金曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 5), color: 'text-yellow-400' },
+            { id: 'w6', name: '土曜の朝', desc: '土曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 6), color: 'text-indigo-400' },
+            { id: 'w7', name: '日曜の夜', desc: '日曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 0), color: 'text-rose-400' },
+            { id: 'w8', name: 'フルコンプ', desc: '全曜日に練習実績あり', check: (l) => { const days = new Set(l.map(x=>new Date(x.date).getDay())); return days.size === 7; }, color: 'text-white' },
+
+            // Streaks
+            { id: 'st1', name: '連日', desc: '2日連続', check: (l) => hasStreak(l,2), color: 'text-lime-300' },
+            { id: 'st2', name: '三日連続', desc: '3日連続', check: (l) => hasStreak(l,3), color: 'text-lime-400' },
+            { id: 'st3', name: '五日連続', desc: '5日連続', check: (l) => hasStreak(l,5), color: 'text-lime-500' },
+            { id: 'st4', name: '一週間', desc: '7日連続', check: (l) => hasStreak(l,7), color: 'text-lime-600' },
+            { id: 'st5', name: '二週間', desc: '14日連続', check: (l) => hasStreak(l,14), color: 'text-green-500' },
+            { id: 'st6', name: '一ヶ月', desc: '30日連続', check: (l) => hasStreak(l,30), color: 'text-green-600' },
+            
+            // Content Keywords
+            { id: 'kw1', name: 'スケール', desc: '内容に「スケール」', check: (l) => l.some(x => x.content.includes('スケール')), color: 'text-slate-300' },
+            { id: 'kw2', name: 'コード', desc: '内容に「コード」', check: (l) => l.some(x => x.content.includes('コード')), color: 'text-slate-300' },
+            { id: 'kw3', name: 'カッティング', desc: '内容に「カッティング」', check: (l) => l.some(x => x.content.includes('カッティング')), color: 'text-slate-300' },
+            { id: 'kw4', name: 'アルペジオ', desc: '内容に「アルペジオ」', check: (l) => l.some(x => x.content.includes('アルペジオ')), color: 'text-slate-300' },
+            { id: 'kw5', name: 'アドリブ', desc: '内容に「アドリブ」', check: (l) => l.some(x => x.content.includes('アドリブ')), color: 'text-slate-300' },
+            { id: 'kw6', name: 'チョーキング', desc: '内容に「チョーキング」', check: (l) => l.some(x => x.content.includes('チョーキング')), color: 'text-slate-300' },
+            { id: 'kw7', name: 'スウィープ', desc: '内容に「スウィープ」', check: (l) => l.some(x => x.content.includes('スウィープ')), color: 'text-slate-300' },
+            { id: 'kw8', name: 'タッピング', desc: '内容に「タッピング」', check: (l) => l.some(x => x.content.includes('タッピング')), color: 'text-slate-300' },
+            { id: 'kw9', name: '耳コピ', desc: '内容に「耳コピ」', check: (l) => l.some(x => x.content.includes('耳コピ')), color: 'text-slate-300' },
+            { id: 'kw10', name: '作詞作曲', desc: '内容に「作曲」or「作詞」', check: (l) => l.some(x => x.content.includes('作曲')||x.content.includes('作詞')), color: 'text-slate-300' },
+            { id: 'kw11', name: '基礎', desc: '内容に「基礎」', check: (l) => l.some(x => x.content.includes('基礎')), color: 'text-slate-300' },
+            { id: 'kw12', name: '理論', desc: '内容に「理論」', check: (l) => l.some(x => x.content.includes('理論')), color: 'text-slate-300' },
+            { id: 'kw13', name: '模写', desc: '内容に「コピー」', check: (l) => l.some(x => x.content.includes('コピー')), color: 'text-slate-300' },
+            { id: 'kw14', name: 'メンテナンス', desc: '内容に「弦交換」or「掃除」', check: (l) => l.some(x => x.content.includes('弦交換')||x.content.includes('掃除')), color: 'text-slate-300' },
+
+            // BPM Specifics
+            { id: 'bpm1', name: '超スロー', desc: 'BPM 40-59', check: (l) => l.some(x => x.bpm >= 40 && x.bpm < 60), color: 'text-blue-200' },
+            { id: 'bpm2', name: 'ゆったり', desc: 'BPM 60-79', check: (l) => l.some(x => x.bpm >= 60 && x.bpm < 80), color: 'text-blue-300' },
+            { id: 'bpm3', name: 'ミディアム', desc: 'BPM 100-119', check: (l) => l.some(x => x.bpm >= 100 && x.bpm < 120), color: 'text-blue-400' },
+            { id: 'bpm4', name: 'アップテンポ', desc: 'BPM 140-159', check: (l) => l.some(x => x.bpm >= 140 && x.bpm < 160), color: 'text-red-400' },
+            { id: 'bpm5', name: 'ファスト', desc: 'BPM 180-199', check: (l) => l.some(x => x.bpm >= 180 && x.bpm < 200), color: 'text-red-500' },
+            { id: 'bpm6', name: '超速', desc: 'BPM 200以上', check: (l) => l.some(x => x.bpm >= 200), color: 'text-red-600 animate-pulse' },
+
+            // Tools & Features
+            { id: 'tool1', name: '録音デビュー', desc: '録音機能を使用', check: (l) => l.some(x => x.audio), color: 'text-pink-400' },
+            { id: 'tool2', name: '録音マニア', desc: '録音10回以上', check: (l) => l.filter(x => x.audio).length >= 10, color: 'text-pink-500' },
+            { id: 'tool3', name: 'クリックのみ', desc: 'BPM設定ありで記録', check: (l) => l.some(x => x.bpm > 0), color: 'text-yellow-600' },
+            
+            // Special / Fun
+            { id: 'sp1', name: 'ゾロ目', desc: '11:11 or 22:22', check: (l) => l.some(x => x.time === '11:11' || x.time === '22:22'), color: 'text-yellow-300' },
+            { id: 'sp2', name: '元旦', desc: '1/1に練習', check: (l) => l.some(x => x.date.includes('/1/1')), color: 'text-red-300' },
+            { id: 'sp3', name: '大晦日', desc: '12/31に練習', check: (l) => l.some(x => x.date.includes('/12/31')), color: 'text-white' },
+            { id: 'sp4', name: 'クリスマス', desc: '12/24 or 25に練習', check: (l) => l.some(x => x.date.includes('/12/24')||x.date.includes('/12/25')), color: 'text-green-400' },
+            { id: 'sp5', name: 'バレンタイン', desc: '2/14に練習', check: (l) => l.some(x => x.date.includes('/2/14')), color: 'text-pink-300' },
+            { id: 'sp6', name: 'ハロウィン', desc: '10/31に練習', check: (l) => l.some(x => x.date.includes('/10/31')), color: 'text-orange-400' },
+            { id: 'sp7', name: 'エイプリル', desc: '4/1に練習', check: (l) => l.some(x => x.date.includes('/4/1')), color: 'text-sky-300' },
+            { id: 'sp8', name: '七夕', desc: '7/7に練習', check: (l) => l.some(x => x.date.includes('/7/7')), color: 'text-blue-300' },
+            { id: 'sp9', name: 'キリ番', desc: 'ログID下2桁00', check: (l) => l.some(x => String(x.id).endsWith('00')), color: 'text-purple-300' },
+            
+            // Intensity
+            { id: 'i1', name: 'ダブルヘッダー', desc: '1日2回練習', check: (l) => { const c={}; l.forEach(x=>c[x.date]=(c[x.date]||0)+1); return Object.values(c).some(n=>n>=2); }, color: 'text-rose-300' },
+            { id: 'i2', name: 'トリプル', desc: '1日3回練習', check: (l) => { const c={}; l.forEach(x=>c[x.date]=(c[x.date]||0)+1); return Object.values(c).some(n=>n>=3); }, color: 'text-rose-400' },
+            { id: 'i3', name: '合宿モード', desc: '1日5回練習', check: (l) => { const c={}; l.forEach(x=>c[x.date]=(c[x.date]||0)+1); return Object.values(c).some(n=>n>=5); }, color: 'text-rose-500' }
+        ];
+
+        const hasStreak = (logs, days) => {
+            if (logs.length < days) return false;
+            const dates = [...new Set(logs.map(l => l.date))].sort((a,b) => new Date(b) - new Date(a));
+            let streak = 0;
+            for (let i = 0; i < dates.length - 1; i++) {
+                const diff = Math.ceil(Math.abs(new Date(dates[i]) - new Date(dates[i+1])) / (86400000));
+                if (diff === 1) streak++; else streak = 0;
+                if (streak >= days - 1) return true;
+            }
+            return false;
+        };
+
+        const Stats = ({ logs }) => {
+            const totalMinutes = logs.reduce((acc, log) => acc + parseInt(log.duration || 0), 0);
+            const totalHours = (totalMinutes / 60).toFixed(1);
+            const unlockedBadges = useMemo(() => ALL_BADGES.filter(b => b.check(logs, totalMinutes)), [logs, totalMinutes]);
+
+            return (
+                <div className="col-span-1 md:col-span-2 bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700">
+                    <div className="flex items-center space-x-2 mb-6"><IconAward className="text-yellow-500 w-6 h-6" /><h2 className="text-xl font-bold text-white">実績と目標</h2></div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                        <div>
+                            <div className="bg-slate-700/50 p-4 rounded-lg mb-4">
+                                <h3 className="text-slate-400 text-sm mb-1">総練習時間</h3>
+                                <div className="flex items-end space-x-2"><span className="text-4xl font-bold text-white">{totalHours}</span><span className="text-lg text-slate-400 mb-1">時間</span></div>
+                                <div className="mt-2 text-xs text-slate-500">獲得バッジ: <span className="text-white font-bold">{unlockedBadges.length}</span> / {ALL_BADGES.length}</div>
+                            </div>
+                            <VisualStats logs={logs} />
+                        </div>
+                        <div className="content-start">
+                            <h3 className="text-xs font-bold text-slate-400 mb-2">獲得済みバッジ ({unlockedBadges.length})</h3>
+                            {unlockedBadges.length === 0 ? ( <div className="text-slate-500 text-xs italic p-4 border border-slate-700 rounded border-dashed text-center">まだバッジがありません。練習を記録してコレクションを増やそう！</div> ) : (
+                                <div className="badge-grid max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
+                                    {unlockedBadges.map(badge => (
+                                        <div key={badge.id} className="p-2 rounded-lg border bg-slate-700/50 border-slate-600 animate-fade-in hover:bg-slate-700 transition-colors">
+                                            <div className="flex items-center space-x-1 mb-1"><IconZap className={`w-3 h-3 ${badge.color}`} /><span className="font-bold text-xs text-white truncate">{badge.name}</span></div>
+                                            <p className="text-[10px] text-slate-400 leading-tight">{badge.desc}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Practice Log Component (With Import/Export) ---
+        const PracticeLog = ({ logs, setLogs, tempAudio, setTempAudio }) => {
+            const [content, setContent] = useState('');
+            const [bpm, setBpm] = useState('120');
+            const [duration, setDuration] = useState('30');
+            const [showTemplates, setShowTemplates] = useState(false);
+
+            const recentLogs = useMemo(() => {
+                const unique = []; const map = new Map();
+                for (const log of logs) { if(!map.has(log.content)) { map.set(log.content, true); unique.push(log); } if(unique.length >= 5) break; }
+                return unique;
+            }, [logs]);
+
+            const loadTemplate = (t) => { setContent(t.content); setDuration(t.duration); setBpm(t.bpm || 120); setShowTemplates(false); };
+            const handleSubmit = (e) => {
+                e.preventDefault(); if (!content.trim()) return;
+                const newLog = { id: Date.now(), date: new Date().toLocaleDateString('ja-JP'), time: new Date().toLocaleTimeString('ja-JP', {hour: '2-digit', minute:'2-digit'}), content, bpm, duration: parseInt(duration), audio: tempAudio };
+                const updatedLogs = [newLog, ...logs];
+                try { localStorage.setItem('guitarLogs', JSON.stringify(updatedLogs)); setLogs(updatedLogs); setContent(''); setTempAudio(null); } catch (error) { alert("保存に失敗しました(容量オーバーの可能性があります)"); }
+            };
+            const deleteLog = (id) => { const updatedLogs = logs.filter(log => log.id !== id); setLogs(updatedLogs); localStorage.setItem('guitarLogs', JSON.stringify(updatedLogs)); };
+            
+            // Backup Features
+            const exportData = () => {
+                const data = JSON.stringify(logs, null, 2);
+                const blob = new Blob([data], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `guitar_mate_backup_${new Date().toLocaleDateString('ja-JP').replace(/\//g,'-')}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+            };
+            const importData = (e) => {
+                const file = e.target.files[0]; if(!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const imported = JSON.parse(e.target.result);
+                        if(Array.isArray(imported)) {
+                            if(confirm('現在のデータを上書きして復元しますか？')) { setLogs(imported); localStorage.setItem('guitarLogs', JSON.stringify(imported)); alert('復元しました'); }
+                        } else alert('データ形式が不正です');
+                    } catch(err) { alert('読み込み失敗'); }
+                };
+                reader.readAsText(file);
+            };
+
+            return (
+                <div className="col-span-1 md:col-span-2 bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700">
+                    <div className="flex justify-between items-center mb-6">
+                        <div className="flex items-center space-x-2"><IconGuitar className="text-indigo-400 w-6 h-6" /><h2 className="text-xl font-bold text-white">練習ログ</h2></div>
+                        <div className="flex gap-2">
+                            <label className="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1.5 rounded text-white flex items-center border border-slate-600 cursor-pointer" title="バックアップを復元">
+                                <IconDatabase className="w-3 h-3 mr-1"/> 復元
+                                <input type="file" accept=".json" onChange={importData} className="hidden" />
+                            </label>
+                            <button onClick={exportData} className="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1.5 rounded text-white flex items-center border border-slate-600" title="データをファイルに保存"><IconDownload className="w-3 h-3 mr-1"/> 保存</button>
+                            <button onClick={() => setShowTemplates(!showTemplates)} className="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1.5 rounded text-white flex items-center border border-slate-600"><IconList className="w-3 h-3 mr-1"/> 定型</button>
+                        </div>
+                    </div>
+                    {showTemplates && (
+                        <div className="mb-6 p-4 bg-slate-900/80 rounded-lg border border-indigo-500/30">
+                            <h4 className="text-xs font-bold text-slate-400 mb-2">定番メニュー</h4>
+                            <div className="flex flex-wrap gap-2 mb-4">{TEMPLATES.map(t => (<button key={t.id} onClick={() => loadTemplate(t)} className="text-xs bg-slate-800 hover:bg-indigo-900 border border-slate-600 px-2 py-1 rounded text-slate-300 transition-colors">{t.label}</button>))}</div>
+                            {recentLogs.length > 0 && (<><h4 className="text-xs font-bold text-slate-400 mb-2">最近の練習</h4><div className="flex flex-wrap gap-2">{recentLogs.map(l => (<button key={l.id} onClick={() => loadTemplate({content: l.content, duration: l.duration, bpm: l.bpm})} className="text-xs bg-slate-800 hover:bg-indigo-900 border border-slate-600 px-2 py-1 rounded text-slate-300 truncate max-w-[200px] transition-colors">{l.content} ({l.duration}分)</button>))}</div></>)}
+                        </div>
+                    )}
+                    <form onSubmit={handleSubmit} className="mb-8 bg-slate-900/50 p-4 rounded-lg border border-slate-700/50">
+                        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 mb-4">
+                            <div className="md:col-span-6"><label className="block text-xs text-slate-400 mb-1">練習内容</label><input type="text" placeholder="例：クロマチックスケール" className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-white focus:outline-none focus:border-indigo-500" value={content} onChange={(e) => setContent(e.target.value)}/></div>
+                            <div className="md:col-span-3"><label className="block text-xs text-slate-400 mb-1">BPM</label><select className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-white focus:outline-none focus:border-indigo-500" value={bpm} onChange={(e) => setBpm(e.target.value)}>{[0,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200].map(opt => (<option key={opt} value={opt}>{opt === 0 ? '-' : opt}</option>))}</select></div>
+                            <div className="md:col-span-3"><label className="block text-xs text-slate-400 mb-1">時間 (分)</label><select className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-white focus:outline-none focus:border-indigo-500" value={duration} onChange={(e) => setDuration(e.target.value)}>{[5,10,15,20,30,45,60,90,120].map(opt => (<option key={opt} value={opt}>{opt}分</option>))}</select></div>
+                        </div>
+                        {tempAudio && (<div className="mb-4 bg-slate-800/80 p-3 rounded border border-rose-500/30 flex items-center justify-between"><div className="flex items-center text-rose-400 text-sm"><IconMic className="w-4 h-4 mr-2" /><span>録音データあり</span></div><div className="flex items-center gap-2"><audio src={tempAudio} controls className="w-40 h-8" /><button type="button" onClick={() => setTempAudio(null)} className="text-slate-400 hover:text-red-400"><IconX className="w-5 h-5" /></button></div></div>)}
+                        <div className="flex items-end justify-end"><button type="submit" className="w-full md:w-auto bg-indigo-500 hover:bg-indigo-600 text-white px-6 py-2 rounded font-bold transition-colors flex items-center justify-center"><IconPlus className="w-4 h-4 mr-1" /> 記録する</button></div>
+                    </form>
+                    <div className="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
+                        {logs.length === 0 && (<div className="text-center text-slate-500 py-8">まだ記録がありません。</div>)}
+                        {logs.map(log => (
+                        <div key={log.id} className="group bg-slate-700/30 hover:bg-slate-700/60 transition-colors p-4 rounded-lg flex flex-col gap-2 border border-slate-700/50">
+                            <div className="flex justify-between items-start"><div className="flex-1"><div className="flex items-center gap-2 text-xs text-slate-400 mb-1"><span>{log.date}</span><span>{log.time}</span></div><div className="flex flex-wrap items-center gap-2 mb-2"><span className="font-medium text-white">{log.content}</span>{log.bpm && log.bpm !== '0' && (<span className="px-2 py-0.5 rounded text-xs bg-slate-600 text-slate-300 flex items-center"><IconActivity className="w-3 h-3 mr-1" /> BPM {log.bpm}</span>)}</div></div><div className="flex items-center gap-2"><div className="flex items-center text-indigo-300 bg-indigo-500/10 px-3 py-1 rounded-full text-sm font-bold whitespace-nowrap"><IconClock className="w-3 h-3 mr-1" />{log.duration}min</div><button onClick={() => deleteLog(log.id)} className="text-slate-500 hover:text-red-400 transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-2"><IconTrash className="w-4 h-4" /></button></div></div>
+                            {log.audio && (<div className="mt-2 bg-slate-800/50 p-2 rounded-lg border border-slate-700 flex items-center gap-2"><IconMusic className="w-4 h-4 text-indigo-400 shrink-0" /><audio src={log.audio} controls className="w-full h-8" /></div>)}
+                        </div>
+                        ))}
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Main App Component ---
+        const App = () => {
+            const [logs, setLogs] = useState([]);
+            const [tempAudio, setTempAudio] = useState(null);
+
+            useEffect(() => {
+                const savedLogs = localStorage.getItem('guitarLogs');
+                if (savedLogs) setLogs(JSON.parse(savedLogs));
+            }, []);
+
+            return (
+                <div className="min-h-screen bg-slate-900 text-slate-200 font-sans selection:bg-amber-500/30">
+                <div className="max-w-4xl mx-auto px-4 py-8">
+                    <header className="mb-8 text-center md:text-left flex flex-col md:flex-row justify-between items-end border-b border-slate-800 pb-6">
+                    <div><h1 className="text-3xl md:text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-amber-400 to-orange-500 mb-2">Guitar Mate</h1><p className="text-slate-400">日々の練習をサポートするパートナー</p></div>
+                    <div className="mt-4 md:mt-0 text-sm text-slate-500">Keep Playing, Keep Growing.</div>
+                    </header>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                    <Metronome /><Recorder setTempAudio={setTempAudio} /><BackingTrack />
+                    <PracticeLog logs={logs} setLogs={setLogs} tempAudio={tempAudio} setTempAudio={setTempAudio}/>
+                    <Stats logs={logs} />
+                    </div>
+                    <footer className="text-center text-slate-600 text-xs py-8">&copy; {new Date().getFullYear()} Guitar Mate - Your Pocket Practice Room</footer>
+                </div>
+                </div>
+            );
+        };
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
