@@ -81,11 +81,15 @@
             return buffer;
         };
 
-        const playKick = (ctx, time) => {
+        const playKick = (ctx, time, mixNode) => {
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
             osc.connect(gain);
+            
+            // Connect to speakers AND record mix
             gain.connect(ctx.destination);
+            if(mixNode) gain.connect(mixNode);
+
             osc.frequency.setValueAtTime(100, time);
             osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.3);
             gain.gain.setValueAtTime(1.0, time);
@@ -93,16 +97,23 @@
             osc.start(time); osc.stop(time + 0.3);
         };
 
-        const playSnare = (ctx, time, noiseBuffer) => {
+        const playSnare = (ctx, time, noiseBuffer, mixNode) => {
+            // Body
             const osc = ctx.createOscillator();
             const oscGain = ctx.createGain();
             osc.type = 'triangle';
             osc.connect(oscGain);
+            
+            // Connect to speakers AND record mix
             oscGain.connect(ctx.destination);
+            if(mixNode) oscGain.connect(mixNode);
+
             osc.frequency.setValueAtTime(200, time);
             oscGain.gain.setValueAtTime(0.3, time);
             oscGain.gain.exponentialRampToValueAtTime(0.01, time + 0.15);
             osc.start(time); osc.stop(time + 0.15);
+
+            // Wires
             const noise = ctx.createBufferSource();
             const noiseFilter = ctx.createBiquadFilter();
             const noiseGain = ctx.createGain();
@@ -111,13 +122,17 @@
             noiseFilter.frequency.value = 2000;
             noise.connect(noiseFilter);
             noiseFilter.connect(noiseGain);
+            
+            // Connect to speakers AND record mix
             noiseGain.connect(ctx.destination);
+            if(mixNode) noiseGain.connect(mixNode);
+
             noiseGain.gain.setValueAtTime(0.6, time);
             noiseGain.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
             noise.start(time); noise.stop(time + 0.2);
         };
 
-        const playHiHat = (ctx, time, noiseBuffer, open = false) => {
+        const playHiHat = (ctx, time, noiseBuffer, open, mixNode) => {
             const noise = ctx.createBufferSource();
             const noiseFilter = ctx.createBiquadFilter();
             const noiseGain = ctx.createGain();
@@ -126,7 +141,11 @@
             noiseFilter.frequency.value = 8000;
             noise.connect(noiseFilter);
             noiseFilter.connect(noiseGain);
+            
+            // Connect to speakers AND record mix
             noiseGain.connect(ctx.destination);
+            if(mixNode) noiseGain.connect(mixNode);
+
             const decay = open ? 0.3 : 0.04;
             const volume = open ? 0.25 : 0.2;
             noiseGain.gain.setValueAtTime(volume, time);
@@ -134,11 +153,15 @@
             noise.start(time); noise.stop(time + decay);
         };
 
-        const playClick = (ctx, time, accent = false) => {
+        const playClick = (ctx, time, accent, mixNode) => {
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
             osc.connect(gain);
+            
+            // Connect to speakers AND record mix
             gain.connect(ctx.destination);
+            if(mixNode) gain.connect(mixNode);
+
             osc.frequency.value = accent ? 1200 : 800;
             gain.gain.setValueAtTime(0.3, time);
             gain.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
@@ -193,7 +216,7 @@
         ];
 
         // --- Metronome Component ---
-        const Metronome = () => {
+        const Metronome = ({ getAudioContext }) => {
             const [bpm, setBpm] = useState(120);
             const [isPlaying, setIsPlaying] = useState(false);
             const [selectedPattern, setSelectedPattern] = useState('click');
@@ -204,7 +227,6 @@
             const [currentBarCount, setCurrentBarCount] = useState(0); 
             const [isCountingIn, setIsCountingIn] = useState(false);
 
-            const audioCtx = useRef(null);
             const noiseBuffer = useRef(null);
             const schedulerId = useRef(null);
             const nextNoteTime = useRef(0);
@@ -212,17 +234,11 @@
             const internalBpm = useRef(120);
             const trainerState = useRef({ active: false, target: 140, barsStep: 4, increment: 5, counter: 0, countInActive: false });
 
-            const initAudio = () => {
-                if (!audioCtx.current) {
-                    const Ctx = window.AudioContext || window.webkitAudioContext;
-                    audioCtx.current = new Ctx();
-                    noiseBuffer.current = createNoiseBuffer(audioCtx.current);
-                }
-                if (audioCtx.current.state === 'suspended') audioCtx.current.resume();
-            };
-
             const scheduleNote = (beatNumber, time) => {
-                const ctx = audioCtx.current;
+                const { ctx, mixNode } = getAudioContext();
+                if(!ctx) return;
+
+                if(!noiseBuffer.current) noiseBuffer.current = createNoiseBuffer(ctx);
                 
                 // Trainer Logic
                 if (beatNumber === 0 && trainerState.current.active && !trainerState.current.countInActive) {
@@ -242,7 +258,7 @@
                 }
 
                 if (trainerState.current.countInActive) {
-                    if (beatNumber % 4 === 0) playClick(ctx, time, true);
+                    if (beatNumber % 4 === 0) playClick(ctx, time, true, mixNode);
                     if (beatNumber === 15) {
                          trainerState.current.countInActive = false;
                          setIsCountingIn(false);
@@ -252,7 +268,7 @@
                 }
 
                 if (selectedPattern === 'click') {
-                    if (beatNumber % 4 === 0) playClick(ctx, time, beatNumber === 0);
+                    if (beatNumber % 4 === 0) playClick(ctx, time, beatNumber === 0, mixNode);
                 } else {
                     const pattern = PATTERNS[selectedPattern];
                     if (!pattern) return;
@@ -263,16 +279,19 @@
                     }
                     pattern.data.forEach(note => {
                         if (note.s === beatNumber) {
-                            if (note.t === 'K') playKick(ctx, playTime);
-                            if (note.t === 'S') playSnare(ctx, playTime, noiseBuffer.current);
-                            if (note.t === 'H') playHiHat(ctx, playTime, noiseBuffer.current, note.open);
+                            if (note.t === 'K') playKick(ctx, playTime, mixNode);
+                            if (note.t === 'S') playSnare(ctx, playTime, noiseBuffer.current, mixNode);
+                            if (note.t === 'H') playHiHat(ctx, playTime, noiseBuffer.current, note.open, mixNode);
                         }
                     });
                 }
             };
 
             const scheduler = () => {
-                while (nextNoteTime.current < audioCtx.current.currentTime + 0.1) {
+                const { ctx } = getAudioContext();
+                if(!ctx) return;
+
+                while (nextNoteTime.current < ctx.currentTime + 0.1) {
                     scheduleNote(current16thNote.current, nextNoteTime.current);
                     const secondsPerBeat = 60.0 / internalBpm.current;
                     nextNoteTime.current += secondsPerBeat * 0.25;
@@ -287,10 +306,12 @@
                     setIsCountingIn(false);
                     window.clearTimeout(schedulerId.current);
                 } else {
-                    initAudio();
+                    const { ctx } = getAudioContext();
+                    if(ctx.state === 'suspended') ctx.resume();
+                    
                     setIsPlaying(true);
                     current16thNote.current = 0;
-                    nextNoteTime.current = audioCtx.current.currentTime + 0.05;
+                    nextNoteTime.current = ctx.currentTime + 0.05;
                     internalBpm.current = parseInt(bpm);
                     trainerState.current = {
                         active: trainerMode,
@@ -372,12 +393,13 @@
             );
         };
 
-        // --- Recorder & BackingTrack & VisualStats (Modified for Error Handling) ---
-        const Recorder = ({ setTempAudio }) => {
+        // --- Recorder Component ---
+        const Recorder = ({ setTempAudio, getAudioContext }) => {
             const [isRecording, setIsRecording] = useState(false);
             const [audioUrl, setAudioUrl] = useState(null);
             const mediaRecorderRef = useRef(null);
             const audioChunksRef = useRef([]);
+            const micSourceRef = useRef(null);
 
             const startRecording = async () => {
                 // Check if browser supports MediaDevices and getUserMedia
@@ -387,15 +409,39 @@
                 }
 
                 try {
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                    mediaRecorderRef.current = new MediaRecorder(stream);
+                    // 1. Get User Media (Mic)
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: { 
+                        echoCancellation: false, // Music mode
+                        noiseSuppression: false,
+                        autoGainControl: false
+                    } });
+
+                    // 2. Get Audio Context & Mix Node
+                    const { ctx, mixNode } = getAudioContext();
+                    if(ctx.state === 'suspended') await ctx.resume();
+
+                    // 3. Connect Mic to Mix Node (BUT NOT DESTINATION to avoid feedback)
+                    const micSource = ctx.createMediaStreamSource(stream);
+                    micSource.connect(mixNode);
+                    micSourceRef.current = micSource;
+
+                    // 4. Record from the Mix Node (Mic + Backing + Click)
+                    const mixedStream = mixNode.stream;
+                    mediaRecorderRef.current = new MediaRecorder(mixedStream);
+                    
                     audioChunksRef.current = [];
                     mediaRecorderRef.current.ondataavailable = (event) => { if (event.data.size > 0) audioChunksRef.current.push(event.data); };
                     mediaRecorderRef.current.onstop = async () => {
                         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' }); 
                         setAudioUrl(URL.createObjectURL(audioBlob));
                         try { setTempAudio(await blobToBase64(audioBlob)); } catch (error) { console.error(error); }
+                        
+                        // Cleanup Mic
                         stream.getTracks().forEach(track => track.stop());
+                        if(micSourceRef.current) {
+                            micSourceRef.current.disconnect();
+                            micSourceRef.current = null;
+                        }
                     };
                     mediaRecorderRef.current.start(); 
                     setIsRecording(true); 
@@ -418,14 +464,14 @@
                 <div className="flex items-center space-x-2 mb-4"><IconMic className="text-rose-500 w-6 h-6" /><h2 className="text-xl font-bold text-white">クイック録音</h2></div>
                 <div className="flex flex-col items-center justify-center h-40 bg-slate-900 rounded-lg border border-slate-700 mb-4 overflow-hidden relative">
                     {isRecording && (<div className="absolute inset-0 flex items-center justify-center"><div className="animate-pulse w-24 h-24 bg-rose-500/20 rounded-full blur-xl"></div><span className="relative z-10 text-rose-500 font-mono animate-pulse">RECORDING...</span></div>)}
-                    {!isRecording && !audioUrl && (<div className="text-center p-4"><p className="text-slate-500 text-sm mb-1">演奏を録音してログに残せます</p></div>)}
+                    {!isRecording && !audioUrl && (<div className="text-center p-4"><p className="text-slate-500 text-sm mb-1">演奏を録音してログに残せます</p><p className="text-[10px] text-slate-600">※イヤホン推奨 (BPM/音源もMixされます)</p></div>)}
                     {!isRecording && audioUrl && (<div className="w-full flex flex-col items-center justify-center p-2"><audio controls src={audioUrl} className="w-11/12 h-8 mb-2" /><span className="text-emerald-400 text-xs flex items-center"><IconCheck className="w-3 h-3 mr-1"/> 添付済み</span></div>)}
                 </div>
                 <button onClick={isRecording ? stopRecording : startRecording} className={`w-full py-3 rounded-lg font-bold flex items-center justify-center transition-all ${isRecording ? 'bg-slate-700 hover:bg-slate-600 text-white border border-rose-500/50' : 'bg-rose-500 hover:bg-rose-600 text-white'}`}>{isRecording ? <><IconCheck className="mr-2"/> 完了</> : <><IconMic className="mr-2"/> 録音開始</>}</button></div>
             );
         };
 
-        const BackingTrack = () => {
+        const BackingTrack = ({ getAudioContext }) => {
             const [audioSrc, setAudioSrc] = useState(null);
             const [fileName, setFileName] = useState("");
             const [playbackRate, setPlaybackRate] = useState(1.0);
@@ -436,8 +482,10 @@
             const [loopB, setLoopB] = useState(null);
             const [currentTime, setCurrentTime] = useState(0);
             const audioRef = useRef(null);
+            const sourceNodeRef = useRef(null);
             const canvasRef = useRef(null);
             const animationRef = useRef(null);
+
             const handleFileChange = async (e) => {
                 const file = e.target.files[0];
                 if (file) {
@@ -450,6 +498,23 @@
                     } catch(err) { console.error("Decode error", err); }
                 }
             };
+
+            // Audio Routing Effect
+            useEffect(() => {
+                if (audioRef.current && audioSrc) {
+                    const { ctx, mixNode } = getAudioContext();
+                    
+                    // Create MediaElementSource ONLY ONCE
+                    if (!sourceNodeRef.current) {
+                       sourceNodeRef.current = ctx.createMediaElementSource(audioRef.current);
+                    }
+                    
+                    // Connect
+                    sourceNodeRef.current.connect(ctx.destination); // Monitor
+                    sourceNodeRef.current.connect(mixNode); // Record
+                }
+            }, [audioSrc, getAudioContext]);
+
             const updateAudio = (rate, pitch, preserve) => { if (audioRef.current) { audioRef.current.preservesPitch = preserve; audioRef.current.mozPreservesPitch = preserve; audioRef.current.webkitPreservesPitch = preserve; if (preserve) audioRef.current.playbackRate = rate; else audioRef.current.playbackRate = rate * Math.pow(2, pitch / 12); } };
             const handleRateChange = (e) => { const val = parseFloat(e.target.value); setPlaybackRate(val); updateAudio(val, pitchShift, preservesPitch); };
             const handlePitchChange = (e) => { const val = parseInt(e.target.value); setPitchShift(val); if (val !== 0 && preservesPitch) { setPreservesPitch(false); updateAudio(playbackRate, val, false); } else updateAudio(playbackRate, val, preservesPitch); };
@@ -477,11 +542,15 @@
                             <div className="w-full">
                                 <div className="flex justify-between items-center mb-3"><span className="text-sm text-slate-300 truncate font-mono max-w-[200px]">{fileName}</span><button onClick={() => { setAudioSrc(null); setFileName(""); setAudioBuffer(null); }} className="text-xs text-red-400 border border-red-400/30 px-2 py-1 rounded">解除</button></div>
                                 <div className="relative w-full h-24 bg-slate-800 rounded border border-slate-700 mb-4 overflow-hidden cursor-crosshair"><canvas ref={canvasRef} width={800} height={100} className="w-full h-full" onClick={handleCanvasClick} />{!audioBuffer && <div className="absolute inset-0 flex items-center justify-center text-xs text-slate-500">波形を生成中...</div>}</div>
-                                <audio ref={audioRef} src={audioSrc} className="hidden" />
+                                <audio ref={audioRef} src={audioSrc} className="hidden" crossOrigin="anonymous" />
                                 <div className="flex items-center justify-center gap-4 mb-6">
                                     <button onClick={() => seek(-10)} className="flex flex-col items-center text-slate-400 hover:text-white transition-colors group"><IconRewind className="w-6 h-6 mb-1 group-hover:scale-110 transition-transform" /><span className="text-[10px] font-bold">-10s</span></button>
                                     <button onClick={() => seek(-5)} className="flex flex-col items-center text-slate-400 hover:text-white transition-colors group"><IconRewind className="w-5 h-5 mb-1 group-hover:scale-110 transition-transform" /><span className="text-[10px] font-bold">-5s</span></button>
-                                    <button onClick={() => { if(audioRef.current.paused) audioRef.current.play(); else audioRef.current.pause(); }} className="w-14 h-14 bg-pink-500 hover:bg-pink-400 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-105 text-white">{audioRef.current && !audioRef.current.paused ? <IconPause className="w-6 h-6" /> : <IconPlay className="w-6 h-6 ml-1" />}</button>
+                                    <button onClick={() => { 
+                                        const { ctx } = getAudioContext(); 
+                                        if(ctx.state === 'suspended') ctx.resume();
+                                        if(audioRef.current.paused) audioRef.current.play(); else audioRef.current.pause(); 
+                                    }} className="w-14 h-14 bg-pink-500 hover:bg-pink-400 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-105 text-white">{audioRef.current && !audioRef.current.paused ? <IconPause className="w-6 h-6" /> : <IconPlay className="w-6 h-6 ml-1" />}</button>
                                     <button onClick={() => seek(5)} className="flex flex-col items-center text-slate-400 hover:text-white transition-colors group"><IconForward className="w-5 h-5 mb-1 group-hover:scale-110 transition-transform" /><span className="text-[10px] font-bold">+5s</span></button>
                                     <button onClick={() => seek(10)} className="flex flex-col items-center text-slate-400 hover:text-white transition-colors group"><IconForward className="w-6 h-6 mb-1 group-hover:scale-110 transition-transform" /><span className="text-[10px] font-bold">+10s</span></button>
                                 </div>
@@ -764,6 +833,20 @@
         const App = () => {
             const [logs, setLogs] = useState([]);
             const [tempAudio, setTempAudio] = useState(null);
+            
+            // Audio Context Shared Ref
+            const audioCtxRef = useRef(null);
+            const mixNodeRef = useRef(null);
+
+            // Singleton AudioContext Getter
+            const getAudioContext = useCallback(() => {
+                if (!audioCtxRef.current) {
+                    const Ctx = window.AudioContext || window.webkitAudioContext;
+                    audioCtxRef.current = new Ctx();
+                    mixNodeRef.current = audioCtxRef.current.createMediaStreamDestination();
+                }
+                return { ctx: audioCtxRef.current, mixNode: mixNodeRef.current };
+            }, []);
 
             useEffect(() => {
                 const savedLogs = localStorage.getItem('guitarLogs');
@@ -778,9 +861,11 @@
                     <div className="mt-4 md:mt-0 text-sm text-slate-500">Keep Playing, Keep Growing.</div>
                     </header>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                    <Metronome /><Recorder setTempAudio={setTempAudio} /><BackingTrack />
-                    <PracticeLog logs={logs} setLogs={setLogs} tempAudio={tempAudio} setTempAudio={setTempAudio}/>
-                    <Stats logs={logs} />
+                        <Metronome getAudioContext={getAudioContext} />
+                        <Recorder setTempAudio={setTempAudio} getAudioContext={getAudioContext} />
+                        <BackingTrack getAudioContext={getAudioContext} />
+                        <PracticeLog logs={logs} setLogs={setLogs} tempAudio={tempAudio} setTempAudio={setTempAudio}/>
+                        <Stats logs={logs} />
                     </div>
                     <footer className="text-center text-slate-600 text-xs py-8">&copy; {new Date().getFullYear()} Guitar Mate - Your Pocket Practice Room</footer>
                 </div>
