@@ -5,12 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Guitar Mate - ギター練習アプリ</title>
     
-    <!-- 
-        Favicon: Base64埋め込み用
-        お手持ちの「GMrogo.jpg」をBase64変換ツールで文字列にし、
-        以下の href="ここ" に貼り付けてください。
-        現在は仮のSVGロゴが入っています。
-    -->
+    <!-- Favicon: User Custom Image -->
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpath d='M50 95 C 15 80, 5 50, 5 30 A 45 45 0 0 1 95 30 C 95 50, 85 80, 50 95 Z' fill='%230f172a' stroke='%2338bdf8' stroke-width='4'/%3E%3Cpath d='M50 20 L50 50 M35 35 L65 35' stroke='%2338bdf8' stroke-width='5' stroke-linecap='round' opacity='0.9'/%3E%3C/svg%3E" type="image/x-icon">
 
     <!-- Tailwind CSS -->
@@ -35,7 +30,6 @@
         input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%; background: #f59e0b; margin-top: -4px; }
         input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 8px; cursor: pointer; background: #475569; border-radius: 4px; }
         .heatmap-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
-        .badge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
         /* Layered Canvas */
         .waveform-container { position: relative; width: 100%; height: 100%; }
         .waveform-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
@@ -79,6 +73,7 @@
         const IconDownload = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>);
         const IconDatabase = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>);
         const IconLayers = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>);
+
 
         // --- Audio Logic (Metronome) ---
         const createNoiseBuffer = (ctx) => {
@@ -523,18 +518,25 @@
                             </div>
                             <VisualStats logs={logs} />
                         </div>
-                        <div className="content-start flex-grow">
-                            <h3 className="text-xs font-bold text-slate-400 mb-2">獲得済みバッジ ({unlockedBadges.length})</h3>
-                            {unlockedBadges.length === 0 ? ( <div className="text-slate-500 text-xs italic p-4 border border-slate-700 rounded border-dashed text-center">まだバッジがありません。練習を記録してコレクションを増やそう！</div> ) : (
-                                <div className="badge-grid max-h-[300px] overflow-y-auto pr-2 custom-scrollbar">
-                                    {unlockedBadges.map(badge => (
-                                        <div key={badge.id} className="p-2 rounded-lg border bg-slate-700/50 border-slate-600 animate-fade-in hover:bg-slate-700 transition-colors">
-                                            <div className="flex items-center space-x-1 mb-1"><IconZap className={`w-3 h-3 ${badge.color}`} /><span className="font-bold text-xs text-white truncate">{badge.name}</span></div>
-                                            <p className="text-[10px] text-slate-400 leading-tight">{badge.desc}</p>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
+                        <div className="content-start flex-grow flex flex-col min-h-0">
+                            <h3 className="text-xs font-bold text-slate-400 mb-2 flex-shrink-0">獲得済みバッジ ({unlockedBadges.length})</h3>
+                            <div className="flex-grow overflow-y-auto custom-scrollbar pr-2 max-h-[280px] bg-slate-900/20 rounded-lg p-1 border border-slate-700/30">
+                                {unlockedBadges.length === 0 ? ( 
+                                    <div className="text-slate-500 text-xs italic p-4 border border-slate-700 rounded border-dashed text-center h-full flex items-center justify-center">まだバッジがありません。<br/>練習を記録してコレクションを増やそう！</div> 
+                                ) : (
+                                    <div className="grid grid-cols-2 gap-2">
+                                        {unlockedBadges.map(badge => (
+                                            <div key={badge.id} className="p-2 rounded-lg border bg-slate-700/50 border-slate-600 animate-fade-in hover:bg-slate-700 transition-colors flex flex-col justify-center">
+                                                <div className="flex items-center space-x-1 mb-1">
+                                                    <IconZap className={`w-3 h-3 ${badge.color} flex-shrink-0`} />
+                                                    <span className="font-bold text-xs text-white truncate">{badge.name}</span>
+                                                </div>
+                                                <p className="text-[10px] text-slate-400 leading-tight line-clamp-2">{badge.desc}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
