@@ -5,8 +5,8 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Guitar Mate - ギター練習アプリ</title>
     
-    <!-- Favicon (Modern Navy Guitar Pick Logo) -->
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cdefs%3E%3ClinearGradient id='grad' x1='0%25' y1='0%25' x2='100%25' y2='100%25'%3E%3Cstop offset='0%25' style='stop-color:%231e293b;stop-opacity:1' /%3E%3Cstop offset='100%25' style='stop-color:%230f172a;stop-opacity:1' /%3E%3C/linearGradient%3E%3C/defs%3E%3Cpath d='M50 95 C 15 80, 5 50, 5 30 A 45 45 0 0 1 95 30 C 95 50, 85 80, 50 95 Z' fill='url(%23grad)' stroke='%23334155' stroke-width='2'/%3E%3Cpath d='M50 25 L50 45 M40 30 L60 30' stroke='%2338bdf8' stroke-width='3' stroke-linecap='round' opacity='0.8'/%3E%3C/svg%3E">
+    <!-- Favicon: User Custom Image -->
+    <link rel="icon" href="GMrogo.jpg" type="image/jpeg">
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -18,22 +18,22 @@
     <!-- Babel (for JSX) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
+    <!-- Tone.js (Using Unpkg for better stability) -->
+    <script src="https://unpkg.com/tone@14.7.77/build/Tone.js"></script>
+
     <style>
-        /* Custom Scrollbar Styles */
         .custom-scrollbar::-webkit-scrollbar { width: 8px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: rgba(30, 41, 59, 0.5); border-radius: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(71, 85, 105, 0.8); border-radius: 4px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.8); }
         body { background-color: #0f172a; }
-        audio { height: 40px; width: 100%; }
-        audio::-webkit-media-controls-enclosure { background-color: #f1f5f9; border-radius: 4px; }
         input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%; background: #f59e0b; margin-top: -4px; }
         input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 8px; cursor: pointer; background: #475569; border-radius: 4px; }
         .heatmap-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
         .badge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
-        /* Toggle Switch Animation */
-        .toggle-checkbox:checked { right: 0; border-color: #10b981; }
-        .toggle-checkbox:checked + .toggle-label { background-color: #10b981; }
+        /* Layered Canvas */
+        .waveform-container { position: relative; width: 100%; height: 100%; }
+        .waveform-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
     </style>
 </head>
 <body>
@@ -42,7 +42,6 @@
     <script type="text/babel">
         const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-        // --- Helper: Convert Blob to Base64 ---
         const blobToBase64 = (blob) => new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onloadend = () => resolve(reader.result);
@@ -50,7 +49,7 @@
             reader.readAsDataURL(blob);
         });
 
-        // --- Icons ---
+        // --- Icons (Unchanged) ---
         const IconGuitar = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="m9 9 5 12 1.8-5.2L21 14Z"/><path d="M5 15a5 5 0 0 0 10 0"/><path d="M5 15a5 5 0 0 1 10 0"/></svg>);
         const IconMetronome = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M14.18 19.82 2.82 2.82"/><path d="M21.18 2.82 9.82 19.82"/><path d="M12 2v20"/></svg>);
         const IconMic = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" x2="12" y1="19" y2="22"/></svg>);
@@ -76,7 +75,7 @@
         const IconDatabase = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>);
         const IconLayers = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>);
 
-        // --- Improved Audio Synthesizer Logic ---
+        // --- Audio Logic (Metronome) ---
         const createNoiseBuffer = (ctx) => {
             const bufferSize = ctx.sampleRate * 2; 
             const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
@@ -91,7 +90,6 @@
             osc.connect(gain);
             gain.connect(ctx.destination);
             if(mixNode) gain.connect(mixNode);
-
             osc.frequency.setValueAtTime(100, time);
             osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.3);
             gain.gain.setValueAtTime(1.0, time);
@@ -106,12 +104,10 @@
             osc.connect(oscGain);
             oscGain.connect(ctx.destination);
             if(mixNode) oscGain.connect(mixNode);
-
             osc.frequency.setValueAtTime(200, time);
             oscGain.gain.setValueAtTime(0.3, time);
             oscGain.gain.exponentialRampToValueAtTime(0.01, time + 0.15);
             osc.start(time); osc.stop(time + 0.15);
-
             const noise = ctx.createBufferSource();
             const noiseFilter = ctx.createBiquadFilter();
             const noiseGain = ctx.createGain();
@@ -122,7 +118,6 @@
             noiseFilter.connect(noiseGain);
             noiseGain.connect(ctx.destination);
             if(mixNode) noiseGain.connect(mixNode);
-
             noiseGain.gain.setValueAtTime(0.6, time);
             noiseGain.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
             noise.start(time); noise.stop(time + 0.2);
@@ -139,7 +134,6 @@
             noiseFilter.connect(noiseGain);
             noiseGain.connect(ctx.destination);
             if(mixNode) noiseGain.connect(mixNode);
-
             const decay = open ? 0.3 : 0.04;
             const volume = open ? 0.25 : 0.2;
             noiseGain.gain.setValueAtTime(volume, time);
@@ -153,7 +147,6 @@
             osc.connect(gain);
             gain.connect(ctx.destination);
             if(mixNode) gain.connect(mixNode);
-
             osc.frequency.value = accent ? 1200 : 800;
             gain.gain.setValueAtTime(0.3, time);
             gain.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
@@ -162,40 +155,10 @@
 
         const PATTERNS = {
             'click': { name: 'メトロノーム', steps: 16, data: [] },
-            '8beat_basic': { 
-                name: '8ビート (王道)', 
-                steps: 16, 
-                data: [
-                    {t:'K',s:0}, {t:'H',s:0}, {t:'H',s:2}, {t:'S',s:4}, {t:'H',s:4}, {t:'H',s:6}, 
-                    {t:'K',s:8}, {t:'H',s:8}, {t:'H',s:10}, {t:'S',s:12}, {t:'H',s:12}, {t:'H',s:14}
-                ] 
-            },
-            '16beat_basic': { 
-                name: '16ビート (王道)', 
-                steps: 16, 
-                data: [
-                    {t:'K',s:0}, {t:'H',s:0}, {t:'H',s:1}, {t:'H',s:2}, {t:'H',s:3}, 
-                    {t:'S',s:4}, {t:'H',s:4}, {t:'H',s:5}, {t:'H',s:6}, {t:'H',s:7},
-                    {t:'K',s:8}, {t:'H',s:8}, {t:'H',s:9}, {t:'H',s:10}, {t:'H',s:11},
-                    {t:'S',s:12}, {t:'H',s:12}, {t:'H',s:13}, {t:'H',s:14}, {t:'H',s:15}
-                ] 
-            },
-            '4onfloor': { 
-                name: '4つ打ち', 
-                steps: 16, 
-                data: [
-                    {t:'K',s:0}, {t:'H',s:2,open:true}, {t:'K',s:4}, {t:'S',s:4}, {t:'H',s:6,open:true}, 
-                    {t:'K',s:8}, {t:'H',s:10,open:true}, {t:'K',s:12}, {t:'S',s:12}, {t:'H',s:14,open:true}
-                ] 
-            },
-            'shuffle': { 
-                name: 'シャッフル', 
-                steps: 16, swing: true, 
-                data: [
-                    {t:'K',s:0}, {t:'H',s:0}, {t:'H',s:2}, {t:'S',s:4}, {t:'H',s:4}, {t:'H',s:6}, 
-                    {t:'K',s:8}, {t:'H',s:8}, {t:'H',s:10}, {t:'S',s:12}, {t:'H',s:12}, {t:'H',s:14}
-                ] 
-            }
+            '8beat_basic': { name: '8ビート (王道)', steps: 16, data: [{t:'K',s:0}, {t:'H',s:0}, {t:'H',s:2}, {t:'S',s:4}, {t:'H',s:4}, {t:'H',s:6}, {t:'K',s:8}, {t:'H',s:8}, {t:'H',s:10}, {t:'S',s:12}, {t:'H',s:12}, {t:'H',s:14}] },
+            '16beat_basic': { name: '16ビート (王道)', steps: 16, data: [{t:'K',s:0}, {t:'H',s:0}, {t:'H',s:1}, {t:'H',s:2}, {t:'H',s:3}, {t:'S',s:4}, {t:'H',s:4}, {t:'H',s:5}, {t:'H',s:6}, {t:'H',s:7}, {t:'K',s:8}, {t:'H',s:8}, {t:'H',s:9}, {t:'H',s:10}, {t:'H',s:11}, {t:'S',s:12}, {t:'H',s:12}, {t:'H',s:13}, {t:'H',s:14}, {t:'H',s:15}] },
+            '4onfloor': { name: '4つ打ち', steps: 16, data: [{t:'K',s:0}, {t:'H',s:2,open:true}, {t:'K',s:4}, {t:'S',s:4}, {t:'H',s:6,open:true}, {t:'K',s:8}, {t:'H',s:10,open:true}, {t:'K',s:12}, {t:'S',s:12}, {t:'H',s:14,open:true}] },
+            'shuffle': { name: 'シャッフル', steps: 16, swing: true, data: [{t:'K',s:0}, {t:'H',s:0}, {t:'H',s:2}, {t:'S',s:4}, {t:'H',s:4}, {t:'H',s:6}, {t:'K',s:8}, {t:'H',s:8}, {t:'H',s:10}, {t:'S',s:12}, {t:'H',s:12}, {t:'H',s:14}] }
         };
 
         const TEMPLATES = [
@@ -229,10 +192,8 @@
             const scheduleNote = (beatNumber, time) => {
                 const { ctx, mixNode } = getAudioContext();
                 if(!ctx) return;
-
                 if(!noiseBuffer.current) noiseBuffer.current = createNoiseBuffer(ctx);
                 
-                // Trainer Logic
                 if (beatNumber === 0 && trainerState.current.active && !trainerState.current.countInActive) {
                     trainerState.current.counter++;
                     setCurrentBarCount(trainerState.current.counter);
@@ -248,7 +209,6 @@
                         }
                     }
                 }
-
                 if (trainerState.current.countInActive) {
                     if (beatNumber % 4 === 0) playClick(ctx, time, true, mixNode);
                     if (beatNumber === 15) {
@@ -258,7 +218,6 @@
                     }
                     return;
                 }
-
                 if (selectedPattern === 'click') {
                     if (beatNumber % 4 === 0) playClick(ctx, time, beatNumber === 0, mixNode);
                 } else {
@@ -282,7 +241,6 @@
             const scheduler = () => {
                 const { ctx } = getAudioContext();
                 if(!ctx) return;
-
                 while (nextNoteTime.current < ctx.currentTime + 0.1) {
                     scheduleNote(current16thNote.current, nextNoteTime.current);
                     const secondsPerBeat = 60.0 / internalBpm.current;
@@ -300,19 +258,11 @@
                 } else {
                     const { ctx } = getAudioContext();
                     if(ctx.state === 'suspended') ctx.resume();
-                    
                     setIsPlaying(true);
                     current16thNote.current = 0;
                     nextNoteTime.current = ctx.currentTime + 0.05;
                     internalBpm.current = parseInt(bpm);
-                    trainerState.current = {
-                        active: trainerMode,
-                        target: parseInt(targetBpm),
-                        barsStep: parseInt(barsPerStep),
-                        increment: parseInt(bpmIncrement),
-                        counter: 1,
-                        countInActive: false
-                    };
+                    trainerState.current = { active: trainerMode, target: parseInt(targetBpm), barsStep: parseInt(barsPerStep), increment: parseInt(bpmIncrement), counter: 1, countInActive: false };
                     setCurrentBarCount(1);
                     scheduler();
                 }
@@ -330,56 +280,17 @@
 
             return (
                 <div className="bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700">
-                    <div className="flex justify-between items-start mb-4">
-                        <div className="flex items-center space-x-2">
-                            <IconMetronome className="text-amber-500 w-6 h-6" />
-                            <h2 className="text-xl font-bold text-white">リズム & ドラム</h2>
-                        </div>
-                        <div className={`px-2 py-0.5 rounded text-xs font-bold ${isCountingIn ? 'bg-rose-500 text-white animate-pulse' : 'bg-transparent text-transparent'}`}>COUNT IN</div>
-                    </div>
-                    
+                    <div className="flex justify-between items-start mb-4"><div className="flex items-center space-x-2"><IconMetronome className="text-amber-500 w-6 h-6" /><h2 className="text-xl font-bold text-white">リズム & ドラム</h2></div><div className={`px-2 py-0.5 rounded text-xs font-bold ${isCountingIn ? 'bg-rose-500 text-white animate-pulse' : 'bg-transparent text-transparent'}`}>COUNT IN</div></div>
                     <div className="flex flex-col items-center mb-6 bg-slate-900/50 p-4 rounded-lg border border-slate-700/50 relative overflow-hidden">
-                        <div className="flex items-baseline space-x-2 z-10">
-                             <span className="text-5xl font-mono text-amber-500 font-bold">{bpm}</span>
-                             <span className="text-sm text-slate-400">BPM</span>
-                        </div>
-                        {trainerMode && isPlaying && (
-                            <div className="text-xs text-slate-400 mt-1 z-10 flex gap-4">
-                                <span>Target: {targetBpm}</span>
-                                <span className={isCountingIn ? "text-slate-600" : "text-emerald-400"}>Bar: {currentBarCount}/{barsPerStep}</span>
-                            </div>
-                        )}
+                        <div className="flex items-baseline space-x-2 z-10"><span className="text-5xl font-mono text-amber-500 font-bold">{bpm}</span><span className="text-sm text-slate-400">BPM</span></div>
+                        {trainerMode && isPlaying && (<div className="text-xs text-slate-400 mt-1 z-10 flex gap-4"><span>Target: {targetBpm}</span><span className={isCountingIn ? "text-slate-600" : "text-emerald-400"}>Bar: {currentBarCount}/{barsPerStep}</span></div>)}
                         <div className={`absolute bottom-0 left-0 h-1 bg-amber-500 transition-all duration-75 ${isPlaying ? 'opacity-100' : 'opacity-0'}`} style={{width: '100%', transform: `scaleX(${isPlaying ? (current16thNote.current % 4 === 0 ? 1 : 0) : 0})`}}></div>
                     </div>
-
                     <div className="space-y-4">
-                        <div>
-                            <label className="text-xs text-slate-400 mb-1 block">リズムパターン</label>
-                            <select value={selectedPattern} onChange={(e) => setSelectedPattern(e.target.value)} className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">
-                                {Object.keys(PATTERNS).map(key => (<option key={key} value={key}>{PATTERNS[key].name}</option>))}
-                            </select>
-                        </div>
-                        <div>
-                            <input type="range" min="40" max="240" value={bpm} onChange={(e) => { setBpm(e.target.value); if(trainerMode) setTrainerMode(false); }} className="w-full h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-amber-500"/>
-                        </div>
-                        <div className="bg-slate-700/30 p-3 rounded border border-slate-600/50">
-                            <div className="flex items-center justify-between mb-3">
-                                <span className="text-sm font-bold text-slate-300 flex items-center"><IconSettings className="w-4 h-4 mr-1"/> スピードトレーナー</span>
-                                <button onClick={() => setTrainerMode(!trainerMode)} className={`w-10 h-5 rounded-full relative transition-colors ${trainerMode ? 'bg-emerald-500' : 'bg-slate-600'}`}>
-                                    <div className={`w-3 h-3 bg-white rounded-full absolute top-1 transition-transform ${trainerMode ? 'left-6' : 'left-1'}`}></div>
-                                </button>
-                            </div>
-                            {trainerMode && (
-                                <div className="grid grid-cols-3 gap-2 text-xs">
-                                    <div><label className="block text-slate-500 mb-1">目標BPM</label><input type="number" value={targetBpm} onChange={e=>setTargetBpm(e.target.value)} className="w-full bg-slate-800 rounded px-2 py-1 text-white border border-slate-600" /></div>
-                                    <div><label className="block text-slate-500 mb-1">小節数</label><input type="number" value={barsPerStep} onChange={e=>setBarsPerStep(e.target.value)} className="w-full bg-slate-800 rounded px-2 py-1 text-white border border-slate-600" /></div>
-                                    <div><label className="block text-slate-500 mb-1">上昇幅</label><input type="number" value={bpmIncrement} onChange={e=>setBpmIncrement(e.target.value)} className="w-full bg-slate-800 rounded px-2 py-1 text-white border border-slate-600" /></div>
-                                </div>
-                            )}
-                        </div>
-                        <button onClick={togglePlay} className={`w-full py-3 rounded-lg font-bold flex items-center justify-center transition-all ${isPlaying ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-amber-500 hover:bg-amber-600 text-slate-900'}`}>
-                            {isPlaying ? <><IconPause className="mr-2"/> 停止</> : <><IconPlay className="mr-2"/> スタート</>}
-                        </button>
+                        <div><label className="text-xs text-slate-400 mb-1 block">リズムパターン</label><select value={selectedPattern} onChange={(e) => setSelectedPattern(e.target.value)} className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">{Object.keys(PATTERNS).map(key => (<option key={key} value={key}>{PATTERNS[key].name}</option>))}</select></div>
+                        <div><input type="range" min="40" max="240" value={bpm} onChange={(e) => { setBpm(e.target.value); if(trainerMode) setTrainerMode(false); }} className="w-full h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-amber-500"/></div>
+                        <div className="bg-slate-700/30 p-3 rounded border border-slate-600/50"><div className="flex items-center justify-between mb-3"><span className="text-sm font-bold text-slate-300 flex items-center"><IconSettings className="w-4 h-4 mr-1"/> スピードトレーナー</span><button onClick={() => setTrainerMode(!trainerMode)} className={`w-10 h-5 rounded-full relative transition-colors ${trainerMode ? 'bg-emerald-500' : 'bg-slate-600'}`}><div className={`w-3 h-3 bg-white rounded-full absolute top-1 transition-transform ${trainerMode ? 'left-6' : 'left-1'}`}></div></button></div>{trainerMode && (<div className="grid grid-cols-3 gap-2 text-xs"><div><label className="block text-slate-500 mb-1">目標BPM</label><input type="number" value={targetBpm} onChange={e=>setTargetBpm(e.target.value)} className="w-full bg-slate-800 rounded px-2 py-1 text-white border border-slate-600" /></div><div><label className="block text-slate-500 mb-1">小節数</label><input type="number" value={barsPerStep} onChange={e=>setBarsPerStep(e.target.value)} className="w-full bg-slate-800 rounded px-2 py-1 text-white border border-slate-600" /></div><div><label className="block text-slate-500 mb-1">上昇幅</label><input type="number" value={bpmIncrement} onChange={e=>setBpmIncrement(e.target.value)} className="w-full bg-slate-800 rounded px-2 py-1 text-white border border-slate-600" /></div></div>)}</div>
+                        <button onClick={togglePlay} className={`w-full py-3 rounded-lg font-bold flex items-center justify-center transition-all ${isPlaying ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-amber-500 hover:bg-amber-600 text-slate-900'}`}>{isPlaying ? <><IconPause className="mr-2"/> 停止</> : <><IconPlay className="mr-2"/> スタート</>}</button>
                     </div>
                 </div>
             );
@@ -389,124 +300,61 @@
         const Recorder = ({ setTempAudio, getAudioContext }) => {
             const [isRecording, setIsRecording] = useState(false);
             const [audioUrl, setAudioUrl] = useState(null);
-            const [isMixMode, setIsMixMode] = useState(true); // Default to Mix Mode
+            const [isMixMode, setIsMixMode] = useState(true);
             const mediaRecorderRef = useRef(null);
             const audioChunksRef = useRef([]);
             const micSourceRef = useRef(null);
 
             const startRecording = async () => {
-                // Check if browser supports MediaDevices and getUserMedia
-                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                    alert("お使いのブラウザは録音機能をサポートしていないか、HTTPS接続ではありません。Chrome, Safari, Edge等の最新版をご利用ください。");
-                    return;
-                }
-
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { alert("お使いのブラウザは録音機能をサポートしていないか、HTTPS接続ではありません。"); return; }
                 try {
-                    // 1. Get User Media (Mic)
-                    const stream = await navigator.mediaDevices.getUserMedia({ audio: { 
-                        echoCancellation: false, // Music mode
-                        noiseSuppression: false,
-                        autoGainControl: false
-                    } });
-
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
                     let sourceStream;
-
                     if (isMixMode) {
-                        // Mix Mode Logic
                         const { ctx, mixNode } = getAudioContext();
                         if(ctx.state === 'suspended') await ctx.resume();
-
-                        // Connect Mic to Mix Node (BUT NOT DESTINATION to avoid feedback)
                         const micSource = ctx.createMediaStreamSource(stream);
                         micSource.connect(mixNode);
                         micSourceRef.current = micSource;
-
-                        // Record from the Mix Node (Mic + Backing + Click)
                         sourceStream = mixNode.stream;
-                    } else {
-                        // Mic Only Mode Logic
-                        // Just use the raw stream from getUserMedia
-                        sourceStream = stream;
-                    }
-
+                    } else { sourceStream = stream; }
                     mediaRecorderRef.current = new MediaRecorder(sourceStream);
-                    
                     audioChunksRef.current = [];
                     mediaRecorderRef.current.ondataavailable = (event) => { if (event.data.size > 0) audioChunksRef.current.push(event.data); };
                     mediaRecorderRef.current.onstop = async () => {
                         const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' }); 
                         setAudioUrl(URL.createObjectURL(audioBlob));
                         try { setTempAudio(await blobToBase64(audioBlob)); } catch (error) { console.error(error); }
-                        
-                        // Cleanup Mic
                         stream.getTracks().forEach(track => track.stop());
-                        
-                        // Cleanup Mix Connection if it exists
-                        if(micSourceRef.current) {
-                            micSourceRef.current.disconnect();
-                            micSourceRef.current = null;
-                        }
+                        if(micSourceRef.current) { micSourceRef.current.disconnect(); micSourceRef.current = null; }
                     };
-                    mediaRecorderRef.current.start(); 
-                    setIsRecording(true); 
-                    setAudioUrl(null); 
-                    setTempAudio(null); 
-                } catch (err) { 
-                    console.error("Recording Error:", err);
-                    if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-                        alert("マイクの使用が許可されていません。\nブラウザのアドレスバーにある鍵アイコンや設定メニューから、このサイトのマイク使用を許可してください。");
-                    } else if (err.name === 'NotFoundError') {
-                        alert("マイクが見つかりませんでした。接続を確認してください。");
-                    } else {
-                        alert("録音の開始に失敗しました: " + err.message + "\nHTTPS接続であることを確認してください。");
-                    }
-                }
+                    mediaRecorderRef.current.start(); setIsRecording(true); setAudioUrl(null); setTempAudio(null); 
+                } catch (err) { console.error("Recording Error:", err); alert("マイクへのアクセスが拒否されたか、エラーが発生しました。"); }
             };
             const stopRecording = () => { if (mediaRecorderRef.current) { mediaRecorderRef.current.stop(); setIsRecording(false); } };
             
             return (
                 <div className="bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700">
-                    <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center space-x-2">
-                            <IconMic className="text-rose-500 w-6 h-6" />
-                            <h2 className="text-xl font-bold text-white">クイック録音</h2>
-                        </div>
-                    </div>
-
+                    <div className="flex items-center justify-between mb-4"><div className="flex items-center space-x-2"><IconMic className="text-rose-500 w-6 h-6" /><h2 className="text-xl font-bold text-white">クイック録音</h2></div></div>
                     <div className="flex flex-col items-center justify-center h-40 bg-slate-900 rounded-lg border border-slate-700 mb-4 overflow-hidden relative">
                         {isRecording && (<div className="absolute inset-0 flex items-center justify-center"><div className="animate-pulse w-24 h-24 bg-rose-500/20 rounded-full blur-xl"></div><span className="relative z-10 text-rose-500 font-mono animate-pulse">RECORDING...</span></div>)}
                         {!isRecording && !audioUrl && (<div className="text-center p-4"><p className="text-slate-500 text-sm mb-1">演奏を録音してログに残せます</p><p className="text-[10px] text-slate-600">※{isMixMode ? "イヤホン推奨 (BPM/音源もMixされます)" : "マイク入力のみ録音されます"}</p></div>)}
                         {!isRecording && audioUrl && (<div className="w-full flex flex-col items-center justify-center p-2"><audio controls src={audioUrl} className="w-11/12 h-8 mb-2" /><span className="text-emerald-400 text-xs flex items-center"><IconCheck className="w-3 h-3 mr-1"/> 添付済み</span></div>)}
                     </div>
-
                     <div className="mb-4 flex items-center justify-center">
                         <div className="relative inline-block w-48 align-middle select-none transition duration-200 ease-in">
                             <div className="flex items-center justify-center bg-slate-700 rounded-lg p-1 border border-slate-600">
-                                <button 
-                                    onClick={() => !isRecording && setIsMixMode(false)}
-                                    className={`w-1/2 py-1 text-xs font-bold rounded transition-all ${!isMixMode ? 'bg-slate-500 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}
-                                    disabled={isRecording}
-                                >
-                                    マイクのみ
-                                </button>
-                                <button 
-                                    onClick={() => !isRecording && setIsMixMode(true)}
-                                    className={`w-1/2 py-1 text-xs font-bold rounded transition-all ${isMixMode ? 'bg-rose-500 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`}
-                                    disabled={isRecording}
-                                >
-                                    Mix録音
-                                </button>
+                                <button onClick={() => !isRecording && setIsMixMode(false)} className={`w-1/2 py-1 text-xs font-bold rounded transition-all ${!isMixMode ? 'bg-slate-500 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`} disabled={isRecording}>マイクのみ</button>
+                                <button onClick={() => !isRecording && setIsMixMode(true)} className={`w-1/2 py-1 text-xs font-bold rounded transition-all ${isMixMode ? 'bg-rose-500 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`} disabled={isRecording}>Mix録音</button>
                             </div>
                         </div>
                     </div>
-
-                    <button onClick={isRecording ? stopRecording : startRecording} className={`w-full py-3 rounded-lg font-bold flex items-center justify-center transition-all ${isRecording ? 'bg-slate-700 hover:bg-slate-600 text-white border border-rose-500/50' : 'bg-rose-500 hover:bg-rose-600 text-white'}`}>
-                        {isRecording ? <><IconCheck className="mr-2"/> 完了</> : <><IconMic className="mr-2"/> 録音開始</>}
-                    </button>
+                    <button onClick={isRecording ? stopRecording : startRecording} className={`w-full py-3 rounded-lg font-bold flex items-center justify-center transition-all ${isRecording ? 'bg-slate-700 hover:bg-slate-600 text-white border border-rose-500/50' : 'bg-rose-500 hover:bg-rose-600 text-white'}`}>{isRecording ? <><IconCheck className="mr-2"/> 完了</> : <><IconMic className="mr-2"/> 録音開始</>}</button>
                 </div>
             );
         };
 
+        // --- Backing Track Component (Double Layer Canvas) ---
         const BackingTrack = ({ getAudioContext }) => {
             const [audioSrc, setAudioSrc] = useState(null);
             const [fileName, setFileName] = useState("");
@@ -517,76 +365,236 @@
             const [loopA, setLoopA] = useState(null);
             const [loopB, setLoopB] = useState(null);
             const [currentTime, setCurrentTime] = useState(0);
-            const audioRef = useRef(null);
-            const sourceNodeRef = useRef(null);
-            const canvasRef = useRef(null);
+            const [duration, setDuration] = useState(0);
+            const [isPlaying, setIsPlaying] = useState(false);
+
+            const playerRef = useRef(null); 
+            const bgCanvasRef = useRef(null); // Static Waveform
+            const fgCanvasRef = useRef(null); // Playhead & Loop
             const animationRef = useRef(null);
+
+            useEffect(() => { const { ctx } = getAudioContext(); Tone.setContext(ctx); }, [getAudioContext]);
+
+            // Draw Static Waveform ONCE
+            useEffect(() => {
+                if(!audioBuffer || !bgCanvasRef.current) return;
+                const canvas = bgCanvasRef.current;
+                const ctx = canvas.getContext('2d');
+                // Hardcoded size to match layout
+                canvas.width = 1000;
+                canvas.height = 200;
+                const width = canvas.width;
+                const height = canvas.height;
+
+                ctx.clearRect(0, 0, width, height);
+                
+                const data = audioBuffer.getChannelData(0);
+                const step = Math.ceil(data.length / width);
+                const amp = height / 2;
+                
+                ctx.fillStyle = '#475569'; // Slate-600
+                ctx.beginPath();
+                for (let i = 0; i < width; i++) {
+                    let min = 1.0; let max = -1.0;
+                    for (let j = 0; j < step; j++) { 
+                        const index = i * step + j;
+                        if(index < data.length){
+                            const d = data[index]; 
+                            if (d < min) min = d; 
+                            if (d > max) max = d;
+                        }
+                    }
+                    const y1 = (1 + min) * amp;
+                    const y2 = (1 + max) * amp;
+                    ctx.rect(i, y1, 1, Math.max(1, y2 - y1));
+                }
+                ctx.fill();
+            }, [audioBuffer]);
+
+            // Animation Loop for Foreground
+            useEffect(() => {
+                const animate = () => {
+                    const canvas = fgCanvasRef.current;
+                    if(!canvas || !duration) {
+                        animationRef.current = requestAnimationFrame(animate);
+                        return;
+                    }
+                    
+                    // Fixed resolution
+                    if(canvas.width !== 1000) canvas.width = 1000;
+                    if(canvas.height !== 200) canvas.height = 200;
+                    
+                    const ctx = canvas.getContext('2d');
+                    const width = canvas.width;
+                    const height = canvas.height;
+                    
+                    // Logic update
+                    if (playerRef.current && isPlaying) {
+                        setCurrentTime(prev => {
+                            let next = prev + (1/60) * playbackRate; // Est. 60fps
+                            if (loopA !== null && loopB !== null && next >= loopB) {
+                                next = loopA;
+                                playerRef.current.stop();
+                                playerRef.current.start(Tone.now(), loopA);
+                            } else if (next >= duration) {
+                                next = 0; setIsPlaying(false); playerRef.current.stop();
+                            }
+                            return next;
+                        });
+                    }
+
+                    // Drawing
+                    ctx.clearRect(0, 0, width, height);
+                    
+                    // Loop Region
+                    if (loopA !== null) {
+                        const xA = (loopA / duration) * width;
+                        const xB = loopB !== null ? (loopB / duration) * width : width;
+                        ctx.fillStyle = 'rgba(236, 72, 153, 0.2)';
+                        ctx.fillRect(xA, 0, xB - xA, height);
+                        ctx.fillStyle = '#db2777';
+                        ctx.fillRect(xA, 0, 2, height);
+                        if (loopB !== null) ctx.fillRect(xB - 2, 0, 2, height);
+                    }
+
+                    // Playhead
+                    const x = (currentTime / duration) * width;
+                    ctx.fillStyle = '#34d399';
+                    ctx.fillRect(x, 0, 2, height);
+
+                    animationRef.current = requestAnimationFrame(animate);
+                };
+                animationRef.current = requestAnimationFrame(animate);
+                return () => cancelAnimationFrame(animationRef.current);
+            }, [isPlaying, playbackRate, loopA, loopB, duration, currentTime]);
 
             const handleFileChange = async (e) => {
                 const file = e.target.files[0];
                 if (file) {
-                    setAudioSrc(URL.createObjectURL(file)); setFileName(file.name); setPlaybackRate(1.0); setPitchShift(0); setPreservesPitch(true); setLoopA(null); setLoopB(null);
+                    if (playerRef.current) { playerRef.current.dispose(); playerRef.current = null; }
+                    setIsPlaying(false);
+                    setAudioSrc(URL.createObjectURL(file));
+                    setFileName(file.name);
+                    setPlaybackRate(1.0);
+                    setPitchShift(0);
+                    setPreservesPitch(true);
+                    setLoopA(null);
+                    setLoopB(null);
+                    setCurrentTime(0);
+                    
                     try {
+                        const { ctx, mixNode } = getAudioContext();
+                        if(ctx.state === 'suspended') await ctx.resume();
                         const arrayBuffer = await file.slice(0).arrayBuffer();
-                        const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                        const decoded = await ctx.decodeAudioData(arrayBuffer);
+                        const decoded = await ctx.decodeAudioData(arrayBuffer.slice(0));
                         setAudioBuffer(decoded);
-                    } catch(err) { console.error("Decode error", err); }
+                        setDuration(decoded.duration);
+
+                        const player = new Tone.GrainPlayer(decoded);
+                        player.grainSize = 0.1;
+                        player.overlap = 0.05;
+                        
+                        const panner = new Tone.Panner(0).toDestination();
+                        player.connect(panner);
+                        player.connect(mixNode); 
+                        playerRef.current = player;
+                    } catch(err) { console.error("Decode error", err); alert("音声ファイルの読み込みに失敗しました"); }
                 }
             };
 
-            // Audio Routing Effect
-            useEffect(() => {
-                if (audioRef.current && audioSrc) {
-                    const { ctx, mixNode } = getAudioContext();
-                    
-                    // Create MediaElementSource ONLY ONCE
-                    if (!sourceNodeRef.current) {
-                       sourceNodeRef.current = ctx.createMediaElementSource(audioRef.current);
-                    }
-                    
-                    // Connect
-                    sourceNodeRef.current.connect(ctx.destination); // Monitor
-                    sourceNodeRef.current.connect(mixNode); // Record
+            const togglePlay = async () => {
+                if (!playerRef.current) return;
+                const { ctx } = getAudioContext();
+                if(ctx.state === 'suspended') await ctx.resume();
+                if(Tone.context.state === 'suspended') await Tone.start();
+                
+                if (playerRef.current.state === 'started') {
+                    playerRef.current.stop();
+                    setIsPlaying(false);
+                } else {
+                    let startPos = currentTime;
+                    if(loopA !== null && loopB !== null && (startPos < loopA || startPos >= loopB)) startPos = loopA;
+                    if(startPos >= duration) startPos = 0;
+                    playerRef.current.start(Tone.now(), startPos); 
+                    setIsPlaying(true);
                 }
-            }, [audioSrc, getAudioContext]);
+            };
 
-            const updateAudio = (rate, pitch, preserve) => { if (audioRef.current) { audioRef.current.preservesPitch = preserve; audioRef.current.mozPreservesPitch = preserve; audioRef.current.webkitPreservesPitch = preserve; if (preserve) audioRef.current.playbackRate = rate; else audioRef.current.playbackRate = rate * Math.pow(2, pitch / 12); } };
-            const handleRateChange = (e) => { const val = parseFloat(e.target.value); setPlaybackRate(val); updateAudio(val, pitchShift, preservesPitch); };
-            const handlePitchChange = (e) => { const val = parseInt(e.target.value); setPitchShift(val); if (val !== 0 && preservesPitch) { setPreservesPitch(false); updateAudio(playbackRate, val, false); } else updateAudio(playbackRate, val, preservesPitch); };
-            const togglePreserve = () => { const newVal = !preservesPitch; setPreservesPitch(newVal); if (newVal) setPitchShift(0); updateAudio(playbackRate, newVal ? 0 : pitchShift, newVal); };
-            const seek = (seconds) => { if(audioRef.current) { let newTime = audioRef.current.currentTime + seconds; if(newTime < 0) newTime = 0; audioRef.current.currentTime = newTime; } };
-            const setPointA = () => { if(audioRef.current) { const t = audioRef.current.currentTime; if (loopB !== null && t >= loopB) setLoopB(null); setLoopA(t); } };
-            const setPointB = () => { if(audioRef.current) { const t = audioRef.current.currentTime; if (loopA !== null && t <= loopA) return; setLoopB(t); } };
+            useEffect(() => {
+                if (!playerRef.current) return;
+                
+                if (preservesPitch) {
+                    // FIXED MODE
+                    playerRef.current.playbackRate = playbackRate;
+                    playerRef.current.detune = pitchShift * 100;
+                } else {
+                    // ANALOG MODE
+                    // Speed change changes pitch naturally in analog.
+                    // But GrainPlayer preserves pitch by default.
+                    // So to simulate analog, we need to shift pitch to MATCH the speed change.
+                    // +1 Octave = 2x Speed.
+                    // Detune = 1200 * log2(playbackRate). 
+                    // AND we also have the user's pitchShift request.
+                    
+                    // Logic:
+                    // 1. User sets speed (playbackRate). This should change pitch naturally.
+                    // 2. User sets pitch (pitchShift). This should change speed naturally.
+                    
+                    // Total Speed Factor = playbackRate * 2^(pitchShift/12)
+                    const totalRate = playbackRate * Math.pow(2, pitchShift / 12);
+                    playerRef.current.playbackRate = totalRate;
+                    
+                    // Now, because GrainPlayer tries to keep original pitch, we force it to shift
+                    // to match this new speed.
+                    // Shift needed = 1200 * log2(totalRate)
+                    playerRef.current.detune = 1200 * Math.log2(totalRate);
+                }
+            }, [playbackRate, pitchShift, preservesPitch]);
+
+            const handleRateChange = (e) => { setPlaybackRate(parseFloat(e.target.value)); };
+            const handlePitchChange = (e) => { setPitchShift(parseInt(e.target.value)); };
+            const togglePreserve = () => { setPreservesPitch(!preservesPitch); };
+
+            const seek = (seconds) => {
+                if(!playerRef.current) return;
+                let newTime = currentTime + seconds;
+                if(newTime < 0) newTime = 0; if(newTime > duration) newTime = duration;
+                const wasPlaying = playerRef.current.state === 'started';
+                playerRef.current.stop();
+                if(wasPlaying) playerRef.current.start(Tone.now(), newTime);
+                setCurrentTime(newTime);
+            };
+
+            const setPointA = () => { if(audioBuffer) { if (loopB !== null && currentTime >= loopB) setLoopB(null); setLoopA(currentTime); } };
+            const setPointB = () => { if(audioBuffer) { if (loopA !== null && currentTime <= loopA) return; setLoopB(currentTime); } };
             const clearLoop = () => { setLoopA(null); setLoopB(null); };
-            const drawWaveform = useCallback(() => {
-                const canvas = canvasRef.current; if (!canvas || !audioBuffer) return;
-                const ctx = canvas.getContext('2d'); const width = canvas.width; const height = canvas.height;
-                const data = audioBuffer.getChannelData(0); const step = Math.ceil(data.length / width); const amp = height / 2;
-                ctx.clearRect(0, 0, width, height); ctx.fillStyle = '#475569'; ctx.beginPath();
-                for (let i = 0; i < width; i++) { let min = 1.0; let max = -1.0; for (let j = 0; j < step; j++) { const datum = data[i * step + j]; if (datum < min) min = datum; if (datum > max) max = datum; } ctx.fillRect(i, (1 + min) * amp, 1, Math.max(1, (max - min) * amp)); }
-                if (loopA !== null) { const xA = (loopA / audioBuffer.duration) * width; const xB = loopB !== null ? (loopB / audioBuffer.duration) * width : width; ctx.fillStyle = 'rgba(236, 72, 153, 0.2)'; ctx.fillRect(xA, 0, xB - xA, height); ctx.fillStyle = '#db2777'; ctx.fillRect(xA, 0, 2, height); if (loopB !== null) ctx.fillRect(xB - 2, 0, 2, height); }
-                const x = (currentTime / audioBuffer.duration) * width; ctx.fillStyle = '#34d399'; ctx.fillRect(x, 0, 2, height);
-            }, [audioBuffer, loopA, loopB, currentTime]);
-            useEffect(() => { const animate = () => { if (audioRef.current) { const curr = audioRef.current.currentTime; setCurrentTime(curr); if (loopA !== null && loopB !== null && curr >= loopB) audioRef.current.currentTime = loopA; drawWaveform(); } animationRef.current = requestAnimationFrame(animate); }; if (audioBuffer) animationRef.current = requestAnimationFrame(animate); return () => cancelAnimationFrame(animationRef.current); }, [audioBuffer, loopA, loopB, drawWaveform]);
-            const handleCanvasClick = (e) => { if (!audioRef.current || !audioBuffer) return; const rect = canvasRef.current.getBoundingClientRect(); const x = e.clientX - rect.left; const newTime = (x / rect.width) * audioBuffer.duration; audioRef.current.currentTime = newTime; setCurrentTime(newTime); };
+            
+            const handleCanvasClick = (e) => { 
+                if (!audioBuffer) return; 
+                const rect = fgCanvasRef.current.getBoundingClientRect(); 
+                const x = e.clientX - rect.left; 
+                const newTime = (x / rect.width) * duration; 
+                const wasPlaying = isPlaying;
+                if(playerRef.current) { playerRef.current.stop(); if(wasPlaying) playerRef.current.start(Tone.now(), newTime); }
+                setCurrentTime(newTime); 
+            };
+
             return (
                 <div className="col-span-1 md:col-span-2 bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700">
                     <div className="flex items-center space-x-2 mb-4"><IconMusic className="text-pink-400 w-6 h-6" /><h2 className="text-xl font-bold text-white">バッキングトラック (mp3/wav)</h2></div>
                     <div className="bg-slate-900/50 p-6 rounded-lg border border-slate-700/50 flex flex-col items-center justify-center">
                         {!audioSrc ? ( <div className="w-full h-32 border-2 border-dashed border-slate-600 rounded-lg flex flex-col items-center justify-center text-slate-500 hover:border-pink-400 hover:text-pink-400 transition-colors relative group bg-slate-800/50"><IconUpload className="w-10 h-10 mb-3 group-hover:scale-110 transition-transform" /><span className="font-bold">ファイルを選択</span><input type="file" accept="audio/*" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"/></div> ) : (
                             <div className="w-full">
-                                <div className="flex justify-between items-center mb-3"><span className="text-sm text-slate-300 truncate font-mono max-w-[200px]">{fileName}</span><button onClick={() => { setAudioSrc(null); setFileName(""); setAudioBuffer(null); }} className="text-xs text-red-400 border border-red-400/30 px-2 py-1 rounded">解除</button></div>
-                                <div className="relative w-full h-24 bg-slate-800 rounded border border-slate-700 mb-4 overflow-hidden cursor-crosshair"><canvas ref={canvasRef} width={800} height={100} className="w-full h-full" onClick={handleCanvasClick} />{!audioBuffer && <div className="absolute inset-0 flex items-center justify-center text-xs text-slate-500">波形を生成中...</div>}</div>
-                                <audio ref={audioRef} src={audioSrc} className="hidden" crossOrigin="anonymous" />
+                                <div className="flex justify-between items-center mb-3"><span className="text-sm text-slate-300 truncate font-mono max-w-[200px]">{fileName}</span><button onClick={() => { if(playerRef.current) { playerRef.current.dispose(); playerRef.current = null; } setIsPlaying(false); setAudioSrc(null); setFileName(""); setAudioBuffer(null); }} className="text-xs text-red-400 border border-red-400/30 px-2 py-1 rounded">解除</button></div>
+                                <div className="waveform-container relative w-full h-24 bg-slate-800 rounded border border-slate-700 mb-4 overflow-hidden cursor-crosshair">
+                                    <canvas ref={bgCanvasRef} className="waveform-layer" />
+                                    <canvas ref={fgCanvasRef} className="waveform-layer" onClick={handleCanvasClick} />
+                                    {!audioBuffer && <div className="absolute inset-0 flex items-center justify-center text-xs text-slate-500">波形を生成中...</div>}
+                                </div>
                                 <div className="flex items-center justify-center gap-4 mb-6">
                                     <button onClick={() => seek(-10)} className="flex flex-col items-center text-slate-400 hover:text-white transition-colors group"><IconRewind className="w-6 h-6 mb-1 group-hover:scale-110 transition-transform" /><span className="text-[10px] font-bold">-10s</span></button>
                                     <button onClick={() => seek(-5)} className="flex flex-col items-center text-slate-400 hover:text-white transition-colors group"><IconRewind className="w-5 h-5 mb-1 group-hover:scale-110 transition-transform" /><span className="text-[10px] font-bold">-5s</span></button>
-                                    <button onClick={() => { 
-                                        const { ctx } = getAudioContext(); 
-                                        if(ctx.state === 'suspended') ctx.resume();
-                                        if(audioRef.current.paused) audioRef.current.play(); else audioRef.current.pause(); 
-                                    }} className="w-14 h-14 bg-pink-500 hover:bg-pink-400 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-105 text-white">{audioRef.current && !audioRef.current.paused ? <IconPause className="w-6 h-6" /> : <IconPlay className="w-6 h-6 ml-1" />}</button>
+                                    <button onClick={togglePlay} className="w-14 h-14 bg-pink-500 hover:bg-pink-400 rounded-full flex items-center justify-center shadow-lg transition-all hover:scale-105 text-white">{isPlaying ? <IconPause className="w-6 h-6" /> : <IconPlay className="w-6 h-6 ml-1" />}</button>
                                     <button onClick={() => seek(5)} className="flex flex-col items-center text-slate-400 hover:text-white transition-colors group"><IconForward className="w-5 h-5 mb-1 group-hover:scale-110 transition-transform" /><span className="text-[10px] font-bold">+5s</span></button>
                                     <button onClick={() => seek(10)} className="flex flex-col items-center text-slate-400 hover:text-white transition-colors group"><IconForward className="w-6 h-6 mb-1 group-hover:scale-110 transition-transform" /><span className="text-[10px] font-bold">+10s</span></button>
                                 </div>
@@ -595,8 +603,8 @@
                                     <div className="flex gap-2"><button onClick={setPointA} className={`flex-1 py-2 rounded text-xs font-bold border ${loopA !== null ? 'bg-pink-500/20 border-pink-500 text-pink-400' : 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600'}`}>A</button><button onClick={setPointB} disabled={loopA === null} className={`flex-1 py-2 rounded text-xs font-bold border ${loopB !== null ? 'bg-pink-500/20 border-pink-500 text-pink-400' : 'bg-slate-700 border-slate-600 text-slate-300 hover:bg-slate-600 disabled:opacity-50'}`}>B</button></div>
                                 </div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div className="bg-slate-800 p-3 rounded border border-slate-700"><div className="flex justify-between items-center mb-2"><span className="text-xs font-bold text-slate-400">SPEED</span><span className="text-sm font-mono text-pink-400 font-bold">x{playbackRate.toFixed(2)}</span></div><input type="range" min="0.5" max="1.5" step="0.05" value={playbackRate} onChange={handleRateChange} className="w-full h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-pink-500" /></div>
-                                    <div className={`bg-slate-800 p-3 rounded border ${!preservesPitch ? 'border-pink-500/50' : 'border-slate-700'}`}><div className="flex justify-between items-center mb-2"><span className="text-xs font-bold text-slate-400">KEY</span><div className="flex items-center gap-2"><button onClick={togglePreserve} className={`text-[10px] px-1.5 py-0.5 rounded border ${preservesPitch ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-slate-700 text-slate-500 border-slate-600'}`}>{preservesPitch ? "固定中" : "可変"}</button><span className={`text-sm font-mono font-bold ${pitchShift > 0 ? 'text-emerald-400' : pitchShift < 0 ? 'text-rose-400' : 'text-slate-400'}`}>{pitchShift > 0 ? '+' : ''}{pitchShift}</span></div></div><input type="range" min="-6" max="6" step="1" value={pitchShift} onChange={handlePitchChange} disabled={preservesPitch && pitchShift === 0} className={`w-full h-2 rounded-lg appearance-none cursor-pointer ${preservesPitch && pitchShift === 0 ? 'bg-slate-700 accent-slate-500' : 'bg-slate-600 accent-emerald-500'}`} /></div>
+                                    <div className="bg-slate-800 p-3 rounded border border-slate-700"><div className="flex justify-between items-center mb-2"><span className="text-xs font-bold text-slate-400">SPEED (Tone.js)</span><span className="text-sm font-mono text-pink-400 font-bold">x{playbackRate.toFixed(2)}</span></div><input type="range" min="0.5" max="1.5" step="0.05" value={playbackRate} onChange={handleRateChange} className="w-full h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-pink-500" /></div>
+                                    <div className={`bg-slate-800 p-3 rounded border ${!preservesPitch ? 'border-pink-500/50' : 'border-slate-700'}`}><div className="flex justify-between items-center mb-2"><span className="text-xs font-bold text-slate-400">KEY (独立制御)</span><div className="flex items-center gap-2"><button onClick={togglePreserve} className={`text-[10px] px-1.5 py-0.5 rounded border ${preservesPitch ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-slate-700 text-slate-500 border-slate-600'}`}>{preservesPitch ? "固定中" : "可変"}</button><span className={`text-sm font-mono font-bold ${pitchShift > 0 ? 'text-emerald-400' : pitchShift < 0 ? 'text-rose-400' : 'text-slate-400'}`}>{pitchShift > 0 ? '+' : ''}{pitchShift}</span></div></div><input type="range" min="-6" max="6" step="1" value={pitchShift} onChange={handlePitchChange} disabled={preservesPitch && pitchShift === 0} className={`w-full h-2 rounded-lg appearance-none cursor-pointer ${preservesPitch && pitchShift === 0 ? 'bg-slate-700 accent-slate-500' : 'bg-slate-600 accent-emerald-500'}`} /></div>
                                 </div>
                             </div>
                         )}
@@ -624,9 +632,7 @@
             );
         };
 
-        // --- EXTENDED BADGE LOGIC (100+ conditions) ---
         const ALL_BADGES = [
-            // Time Milestones
             { id: 't1', name: '初めの一歩', desc: '最初の練習', check: (l,m) => l.length >= 1, color: 'text-emerald-300' },
             { id: 't2', name: '3時間経過', desc: '総練習3時間', check: (l,m) => m >= 180, color: 'text-emerald-400' },
             { id: 't3', name: '10時間経過', desc: '総練習10時間', check: (l,m) => m >= 600, color: 'text-emerald-500' },
@@ -637,8 +643,6 @@
             { id: 't8', name: '500時間', desc: 'セミプロ級', check: (l,m) => m >= 30000, color: 'text-purple-500' },
             { id: 't9', name: '1000時間', desc: '達人への道', check: (l,m) => m >= 60000, color: 'text-purple-600' },
             { id: 't10', name: '10000時間', desc: 'マエストロ', check: (l,m) => m >= 600000, color: 'text-yellow-500' },
-
-            // Count Milestones
             { id: 'c1', name: '三日坊主回避', desc: '3回記録', check: (l) => l.length >= 3, color: 'text-blue-300' },
             { id: 'c2', name: '10回記録', desc: '10回記録', check: (l) => l.length >= 10, color: 'text-blue-400' },
             { id: 'c3', name: '30回記録', desc: '30回記録', check: (l) => l.length >= 30, color: 'text-blue-500' },
@@ -646,16 +650,12 @@
             { id: 'c5', name: '100回記録', desc: '100回記録', check: (l) => l.length >= 100, color: 'text-indigo-400' },
             { id: 'c6', name: '200回記録', desc: '200回記録', check: (l) => l.length >= 200, color: 'text-indigo-500' },
             { id: 'c7', name: '365回記録', desc: '毎日コツコツ', check: (l) => l.length >= 365, color: 'text-indigo-600' },
-            
-            // Duration Specifics
             { id: 'd1', name: 'サクッと', desc: '5分以下の練習', check: (l) => l.some(x => x.duration <= 5), color: 'text-amber-300' },
             { id: 'd2', name: '標準セット', desc: '30分の練習', check: (l) => l.some(x => x.duration === 30), color: 'text-amber-400' },
             { id: 'd3', name: 'ガッツリ', desc: '60分以上の練習', check: (l) => l.some(x => x.duration >= 60), color: 'text-amber-500' },
             { id: 'd4', name: 'ロングラン', desc: '90分以上の練習', check: (l) => l.some(x => x.duration >= 90), color: 'text-amber-600' },
             { id: 'd5', name: 'マラソン', desc: '120分以上の練習', check: (l) => l.some(x => x.duration >= 120), color: 'text-red-400' },
             { id: 'd6', name: '耐久レース', desc: '180分以上の練習', check: (l) => l.some(x => x.duration >= 180), color: 'text-red-500' },
-
-            // Time of Day
             { id: 'h1', name: '早起き鳥', desc: '4:00-5:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h >= 4 && h < 6; }), color: 'text-sky-400' },
             { id: 'h2', name: '朝活', desc: '6:00-8:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h >= 6 && h < 9; }), color: 'text-sky-500' },
             { id: 'h3', name: 'ランチタイム', desc: '12:00-12:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h === 12; }), color: 'text-yellow-400' },
@@ -664,8 +664,6 @@
             { id: 'h6', name: 'プライムタイム', desc: '20:00-21:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h >= 20 && h < 22; }), color: 'text-indigo-400' },
             { id: 'h7', name: '夜更かし', desc: '23:00-0:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h === 23 || h === 0; }), color: 'text-indigo-600' },
             { id: 'h8', name: '丑三つ時', desc: '1:00-3:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h >= 1 && h < 4; }), color: 'text-purple-700' },
-
-            // Days of Week
             { id: 'w1', name: 'ブルーマンデー', desc: '月曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 1), color: 'text-blue-400' },
             { id: 'w2', name: '火曜サスペンス', desc: '火曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 2), color: 'text-red-400' },
             { id: 'w3', name: '水曜どうでしょう', desc: '水曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 3), color: 'text-cyan-400' },
@@ -674,16 +672,12 @@
             { id: 'w6', name: '土曜の朝', desc: '土曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 6), color: 'text-indigo-400' },
             { id: 'w7', name: '日曜の夜', desc: '日曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 0), color: 'text-rose-400' },
             { id: 'w8', name: 'フルコンプ', desc: '全曜日に練習実績あり', check: (l) => { const days = new Set(l.map(x=>new Date(x.date).getDay())); return days.size === 7; }, color: 'text-white' },
-
-            // Streaks
             { id: 'st1', name: '連日', desc: '2日連続', check: (l) => hasStreak(l,2), color: 'text-lime-300' },
             { id: 'st2', name: '三日連続', desc: '3日連続', check: (l) => hasStreak(l,3), color: 'text-lime-400' },
             { id: 'st3', name: '五日連続', desc: '5日連続', check: (l) => hasStreak(l,5), color: 'text-lime-500' },
             { id: 'st4', name: '一週間', desc: '7日連続', check: (l) => hasStreak(l,7), color: 'text-lime-600' },
             { id: 'st5', name: '二週間', desc: '14日連続', check: (l) => hasStreak(l,14), color: 'text-green-500' },
             { id: 'st6', name: '一ヶ月', desc: '30日連続', check: (l) => hasStreak(l,30), color: 'text-green-600' },
-            
-            // Content Keywords
             { id: 'kw1', name: 'スケール', desc: '内容に「スケール」', check: (l) => l.some(x => x.content.includes('スケール')), color: 'text-slate-300' },
             { id: 'kw2', name: 'コード', desc: '内容に「コード」', check: (l) => l.some(x => x.content.includes('コード')), color: 'text-slate-300' },
             { id: 'kw3', name: 'カッティング', desc: '内容に「カッティング」', check: (l) => l.some(x => x.content.includes('カッティング')), color: 'text-slate-300' },
@@ -698,21 +692,15 @@
             { id: 'kw12', name: '理論', desc: '内容に「理論」', check: (l) => l.some(x => x.content.includes('理論')), color: 'text-slate-300' },
             { id: 'kw13', name: '模写', desc: '内容に「コピー」', check: (l) => l.some(x => x.content.includes('コピー')), color: 'text-slate-300' },
             { id: 'kw14', name: 'メンテナンス', desc: '内容に「弦交換」or「掃除」', check: (l) => l.some(x => x.content.includes('弦交換')||x.content.includes('掃除')), color: 'text-slate-300' },
-
-            // BPM Specifics
             { id: 'bpm1', name: '超スロー', desc: 'BPM 40-59', check: (l) => l.some(x => x.bpm >= 40 && x.bpm < 60), color: 'text-blue-200' },
             { id: 'bpm2', name: 'ゆったり', desc: 'BPM 60-79', check: (l) => l.some(x => x.bpm >= 60 && x.bpm < 80), color: 'text-blue-300' },
             { id: 'bpm3', name: 'ミディアム', desc: 'BPM 100-119', check: (l) => l.some(x => x.bpm >= 100 && x.bpm < 120), color: 'text-blue-400' },
             { id: 'bpm4', name: 'アップテンポ', desc: 'BPM 140-159', check: (l) => l.some(x => x.bpm >= 140 && x.bpm < 160), color: 'text-red-400' },
             { id: 'bpm5', name: 'ファスト', desc: 'BPM 180-199', check: (l) => l.some(x => x.bpm >= 180 && x.bpm < 200), color: 'text-red-500' },
             { id: 'bpm6', name: '超速', desc: 'BPM 200以上', check: (l) => l.some(x => x.bpm >= 200), color: 'text-red-600 animate-pulse' },
-
-            // Tools & Features
             { id: 'tool1', name: '録音デビュー', desc: '録音機能を使用', check: (l) => l.some(x => x.audio), color: 'text-pink-400' },
             { id: 'tool2', name: '録音マニア', desc: '録音10回以上', check: (l) => l.filter(x => x.audio).length >= 10, color: 'text-pink-500' },
             { id: 'tool3', name: 'クリックのみ', desc: 'BPM設定ありで記録', check: (l) => l.some(x => x.bpm > 0), color: 'text-yellow-600' },
-            
-            // Special / Fun
             { id: 'sp1', name: 'ゾロ目', desc: '11:11 or 22:22', check: (l) => l.some(x => x.time === '11:11' || x.time === '22:22'), color: 'text-yellow-300' },
             { id: 'sp2', name: '元旦', desc: '1/1に練習', check: (l) => l.some(x => x.date.includes('/1/1')), color: 'text-red-300' },
             { id: 'sp3', name: '大晦日', desc: '12/31に練習', check: (l) => l.some(x => x.date.includes('/12/31')), color: 'text-white' },
@@ -722,8 +710,6 @@
             { id: 'sp7', name: 'エイプリル', desc: '4/1に練習', check: (l) => l.some(x => x.date.includes('/4/1')), color: 'text-sky-300' },
             { id: 'sp8', name: '七夕', desc: '7/7に練習', check: (l) => l.some(x => x.date.includes('/7/7')), color: 'text-blue-300' },
             { id: 'sp9', name: 'キリ番', desc: 'ログID下2桁00', check: (l) => l.some(x => String(x.id).endsWith('00')), color: 'text-purple-300' },
-            
-            // Intensity
             { id: 'i1', name: 'ダブルヘッダー', desc: '1日2回練習', check: (l) => { const c={}; l.forEach(x=>c[x.date]=(c[x.date]||0)+1); return Object.values(c).some(n=>n>=2); }, color: 'text-rose-300' },
             { id: 'i2', name: 'トリプル', desc: '1日3回練習', check: (l) => { const c={}; l.forEach(x=>c[x.date]=(c[x.date]||0)+1); return Object.values(c).some(n=>n>=3); }, color: 'text-rose-400' },
             { id: 'i3', name: '合宿モード', desc: '1日5回練習', check: (l) => { const c={}; l.forEach(x=>c[x.date]=(c[x.date]||0)+1); return Object.values(c).some(n=>n>=5); }, color: 'text-rose-500' }
@@ -776,7 +762,6 @@
             );
         };
 
-        // --- Practice Log Component (With Import/Export) ---
         const PracticeLog = ({ logs, setLogs, tempAudio, setTempAudio }) => {
             const [content, setContent] = useState('');
             const [bpm, setBpm] = useState('120');
@@ -798,7 +783,6 @@
             };
             const deleteLog = (id) => { const updatedLogs = logs.filter(log => log.id !== id); setLogs(updatedLogs); localStorage.setItem('guitarLogs', JSON.stringify(updatedLogs)); };
             
-            // Backup Features
             const exportData = () => {
                 const data = JSON.stringify(logs, null, 2);
                 const blob = new Blob([data], { type: 'application/json' });
@@ -865,16 +849,12 @@
             );
         };
 
-        // --- Main App Component ---
         const App = () => {
             const [logs, setLogs] = useState([]);
             const [tempAudio, setTempAudio] = useState(null);
-            
-            // Audio Context Shared Ref
             const audioCtxRef = useRef(null);
             const mixNodeRef = useRef(null);
 
-            // Singleton AudioContext Getter
             const getAudioContext = useCallback(() => {
                 if (!audioCtxRef.current) {
                     const Ctx = window.AudioContext || window.webkitAudioContext;
