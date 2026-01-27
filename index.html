@@ -18,7 +18,7 @@
     <!-- Babel (for JSX) -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-    <!-- Tone.js (Using Unpkg for better stability) -->
+    <!-- Tone.js -->
     <script src="https://unpkg.com/tone@14.7.77/build/Tone.js"></script>
 
     <style>
@@ -30,9 +30,18 @@
         input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%; background: #f59e0b; margin-top: -4px; }
         input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 8px; cursor: pointer; background: #475569; border-radius: 4px; }
         .heatmap-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+        .badge-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
         /* Layered Canvas */
         .waveform-container { position: relative; width: 100%; height: 100%; }
         .waveform-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
+        /* LED Tuner Styles */
+        .led-bar { transition: all 0.1s ease; box-shadow: 0 0 5px rgba(0,0,0,0.5); }
+        .led-active-green { background-color: #10b981; box-shadow: 0 0 10px #10b981, 0 0 20px #10b981; }
+        .led-active-red { background-color: #ef4444; box-shadow: 0 0 10px #ef4444, 0 0 20px #ef4444; }
+        .led-inactive { background-color: #334155; opacity: 0.3; }
+        /* YouTube Embed */
+        .youtube-container { position: relative; padding-bottom: 56.25%; height: 0; overflow: hidden; max-width: 100%; background: #000; border-radius: 0.5rem;}
+        .youtube-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; }
     </style>
 </head>
 <body>
@@ -73,7 +82,8 @@
         const IconDownload = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>);
         const IconDatabase = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>);
         const IconLayers = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></svg>);
-
+        const IconTimer = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><line x1="10" x2="14" y1="2" y2="2"/><line x1="12" x2="15" y1="14" y2="11"/><circle cx="12" cy="14" r="8"/></svg>);
+        const IconFileText = ({ className }) => (<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>);
 
         // --- Audio Logic (Metronome) ---
         const createNoiseBuffer = (ctx) => {
@@ -99,28 +109,297 @@
         };
         const playClick = (ctx, time, accent, mixNode) => {
             const osc = ctx.createOscillator(); const gain = ctx.createGain(); osc.connect(gain); gain.connect(ctx.destination); if(mixNode) gain.connect(mixNode);
-            osc.frequency.value = accent ? 1200 : 800; gain.gain.setValueAtTime(0.3, time); gain.gain.exponentialRampToValueAtTime(0.001, time + 0.1); osc.start(time); osc.stop(time + 0.1);
+            // All clicks same frequency (800Hz) as requested
+            osc.frequency.value = 800; 
+            gain.gain.setValueAtTime(0.3, time); gain.gain.exponentialRampToValueAtTime(0.001, time + 0.1); osc.start(time); osc.stop(time + 0.1);
+        };
+        
+        const playAlarm = () => {
+             const Ctx = window.AudioContext || window.webkitAudioContext;
+             const ctx = new Ctx();
+             const osc = ctx.createOscillator();
+             const gain = ctx.createGain();
+             osc.connect(gain);
+             gain.connect(ctx.destination);
+             
+             const now = ctx.currentTime;
+             osc.type = 'square';
+             osc.frequency.setValueAtTime(880, now);
+             
+             gain.gain.setValueAtTime(0.1, now);
+             gain.gain.setValueAtTime(0, now + 0.1);
+             gain.gain.setValueAtTime(0.1, now + 0.2);
+             gain.gain.setValueAtTime(0, now + 0.3);
+             gain.gain.setValueAtTime(0.1, now + 0.4);
+             gain.gain.setValueAtTime(0, now + 0.5);
+             
+             osc.start(now);
+             osc.stop(now + 0.6);
         };
 
-        const PATTERNS = { 'click': { name: 'メトロノーム', steps: 16, data: [] }, '8beat_basic': { name: '8ビート (王道)', steps: 16, data: [{t:'K',s:0}, {t:'H',s:0}, {t:'H',s:2}, {t:'S',s:4}, {t:'H',s:4}, {t:'H',s:6}, {t:'K',s:8}, {t:'H',s:8}, {t:'H',s:10}, {t:'S',s:12}, {t:'H',s:12}, {t:'H',s:14}] }, '16beat_basic': { name: '16ビート (王道)', steps: 16, data: [{t:'K',s:0}, {t:'H',s:0}, {t:'H',s:1}, {t:'H',s:2}, {t:'H',s:3}, {t:'S',s:4}, {t:'H',s:4}, {t:'H',s:5}, {t:'H',s:6}, {t:'H',s:7}, {t:'K',s:8}, {t:'H',s:8}, {t:'H',s:9}, {t:'H',s:10}, {t:'H',s:11}, {t:'S',s:12}, {t:'H',s:12}, {t:'H',s:13}, {t:'H',s:14}, {t:'H',s:15}] }, '4onfloor': { name: '4つ打ち', steps: 16, data: [{t:'K',s:0}, {t:'H',s:2,open:true}, {t:'K',s:4}, {t:'S',s:4}, {t:'H',s:6,open:true}, {t:'K',s:8}, {t:'H',s:10,open:true}, {t:'K',s:12}, {t:'S',s:12}, {t:'H',s:14,open:true}] }, 'shuffle': { name: 'シャッフル', steps: 16, swing: true, data: [{t:'K',s:0}, {t:'H',s:0}, {t:'H',s:2}, {t:'S',s:4}, {t:'H',s:4}, {t:'H',s:6}, {t:'K',s:8}, {t:'H',s:8}, {t:'H',s:10}, {t:'S',s:12}, {t:'H',s:12}, {t:'H',s:14}] } };
+        const PATTERNS = { 
+            'click': { name: 'メトロノーム', steps: 16, data: [] }, 
+            '8beat_basic': { name: '8ビート (王道)', steps: 16, data: [{t:'K',s:0}, {t:'H',s:0}, {t:'H',s:2}, {t:'S',s:4}, {t:'H',s:4}, {t:'H',s:6}, {t:'K',s:8}, {t:'H',s:8}, {t:'H',s:10}, {t:'S',s:12}, {t:'H',s:12}, {t:'H',s:14}] }, 
+            '16beat_basic': { name: '16ビート (王道)', steps: 16, data: [{t:'K',s:0}, {t:'H',s:0}, {t:'H',s:1}, {t:'H',s:2}, {t:'H',s:3}, {t:'S',s:4}, {t:'H',s:4}, {t:'H',s:5}, {t:'H',s:6}, {t:'H',s:7}, {t:'K',s:8}, {t:'H',s:8}, {t:'H',s:9}, {t:'H',s:10}, {t:'H',s:11}, {t:'S',s:12}, {t:'H',s:12}, {t:'H',s:13}, {t:'H',s:14}, {t:'H',s:15}] }, 
+            '4onfloor': { name: '4つ打ち', steps: 16, data: [{t:'K',s:0}, {t:'H',s:2,open:true}, {t:'K',s:4}, {t:'S',s:4}, {t:'H',s:6,open:true}, {t:'K',s:8}, {t:'H',s:10,open:true}, {t:'K',s:12}, {t:'S',s:12}, {t:'H',s:14,open:true}] }, 
+            'shuffle': { name: 'シャッフル', steps: 16, swing: true, data: [{t:'K',s:0}, {t:'H',s:0}, {t:'H',s:2}, {t:'S',s:4}, {t:'H',s:4}, {t:'H',s:6}, {t:'K',s:8}, {t:'H',s:8}, {t:'H',s:10}, {t:'S',s:12}, {t:'H',s:12}, {t:'H',s:14}] },
+            '3_4': { name: '3/4拍子 (ワルツ)', steps: 12, data: [{t:'K',s:0}, {t:'H',s:0}, {t:'H',s:2}, {t:'S',s:4}, {t:'H',s:4}, {t:'H',s:6}, {t:'S',s:8}, {t:'H',s:8}, {t:'H',s:10}] },
+            '6_8': { name: '6/8拍子', steps: 12, data: [{t:'K',s:0}, {t:'H',s:0}, {t:'H',s:2}, {t:'H',s:4}, {t:'S',s:6}, {t:'H',s:6}, {t:'H',s:8}, {t:'H',s:10}] }
+        };
         const TEMPLATES = [ { id: 'chromatic', label: '基礎：クロマチックスケール', content: 'クロマチックスケール 運指練習', duration: 10, bpm: 100 }, { id: 'c_major', label: '基礎：Cメジャースケール', content: 'Cメジャースケール 上昇・下降', duration: 15, bpm: 90 }, { id: 'chords_open', label: 'コード：オープンコード', content: 'C, G, D, Em, Am オープンコードチェンジ', duration: 20, bpm: 80 }, { id: 'chords_barre', label: 'コード：バレーコード', content: 'F, Bm バレーコード耐久', duration: 15, bpm: 0 }, { id: 'arpeggio', label: 'テクニック：アルペジオ', content: '指弾きアルペジオ パターン練習', duration: 20, bpm: 80 }, { id: 'song_practice', label: '曲練習：課題曲通し', content: '課題曲 通し練習', duration: 30, bpm: 0 } ];
 
-        // --- Metronome Component ---
+        // --- Timer & Stopwatch Component ---
+        const TimerStopwatch = () => {
+            const [mode, setMode] = useState('stopwatch'); // 'timer' | 'stopwatch'
+            const [isRunning, setIsRunning] = useState(false);
+            const [time, setTime] = useState(0); 
+            const [timerInput, setTimerInput] = useState(5); // Minutes
+            const intervalRef = useRef(null);
+
+            // Simplified Effect for Interval
+            useEffect(() => {
+                let id;
+                if(isRunning) {
+                    id = setInterval(() => {
+                        setTime(prev => {
+                            if (mode === 'timer') {
+                                if (prev <= 0) {
+                                    clearInterval(id);
+                                    setIsRunning(false);
+                                    playAlarm();
+                                    return 0;
+                                }
+                                return prev - 100;
+                            } else {
+                                return prev + 100;
+                            }
+                        });
+                    }, 100);
+                }
+                return () => clearInterval(id);
+            }, [isRunning, mode]);
+
+            const toggle = () => {
+                if(!isRunning && mode === 'timer' && time === 0) {
+                    setTime(timerInput * 60 * 1000);
+                }
+                setIsRunning(!isRunning);
+            };
+
+            const reset = () => {
+                setIsRunning(false);
+                setTime(mode === 'timer' ? timerInput * 60 * 1000 : 0);
+            };
+            
+            useEffect(() => {
+                 if (mode === 'timer' && !isRunning) {
+                     setTime(timerInput * 60 * 1000);
+                 }
+            }, [timerInput, mode]);
+
+            const formatTime = (ms) => {
+                const totalSec = Math.ceil(ms / 1000);
+                const m = Math.floor(totalSec / 60);
+                const s = totalSec % 60;
+                return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+            };
+
+            return (
+                <div className="bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700 h-full flex flex-col">
+                    <div className="flex justify-between items-center mb-4">
+                        <div className="flex items-center space-x-2">
+                            <IconTimer className="text-cyan-400 w-6 h-6" />
+                            <h2 className="text-xl font-bold text-white">タイマー</h2>
+                        </div>
+                        <div className="bg-slate-700 rounded-lg p-1 flex">
+                             <button onClick={()=>{setMode('stopwatch'); setIsRunning(false); setTime(0);}} className={`px-3 py-1 text-xs rounded ${mode==='stopwatch' ? 'bg-cyan-500 text-white' : 'text-slate-400'}`}>Watch</button>
+                             <button onClick={()=>{setMode('timer'); setIsRunning(false); setTime(timerInput*60*1000);}} className={`px-3 py-1 text-xs rounded ${mode==='timer' ? 'bg-cyan-500 text-white' : 'text-slate-400'}`}>Timer</button>
+                        </div>
+                    </div>
+                    
+                    <div className="flex-grow flex flex-col items-center justify-center">
+                        <div className="text-5xl font-mono font-bold text-white mb-4 tracking-wider">
+                            {formatTime(time)}
+                        </div>
+                        
+                        {mode === 'timer' && (
+                             <div className="flex items-center space-x-2 mb-4">
+                                 <input 
+                                     type="number" 
+                                     value={timerInput} 
+                                     onChange={(e)=>setTimerInput(e.target.value)} 
+                                     className="w-16 bg-slate-900 border border-slate-600 rounded px-2 py-1 text-center text-white"
+                                     disabled={isRunning}
+                                 />
+                                 <span className="text-slate-400 text-xs">分</span>
+                             </div>
+                        )}
+
+                        <div className="flex gap-4 w-full">
+                             <button onClick={toggle} className={`flex-1 py-2 rounded font-bold ${isRunning ? 'bg-rose-500 text-white' : 'bg-cyan-500 text-slate-900'}`}>
+                                 {isRunning ? 'Stop' : 'Start'}
+                             </button>
+                             <button onClick={reset} className="px-4 py-2 rounded border border-slate-600 text-slate-300 hover:bg-slate-700">
+                                 Reset
+                             </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        };
+
+        // --- Metronome Component (Updated) ---
         const Metronome = ({ getAudioContext }) => {
             const [bpm, setBpm] = useState(120); const [isPlaying, setIsPlaying] = useState(false); const [selectedPattern, setSelectedPattern] = useState('click'); const [trainerMode, setTrainerMode] = useState(false); const [targetBpm, setTargetBpm] = useState(140); const [barsPerStep, setBarsPerStep] = useState(4); const [bpmIncrement, setBpmIncrement] = useState(5); const [currentBarCount, setCurrentBarCount] = useState(0); const [isCountingIn, setIsCountingIn] = useState(false);
-            const noiseBuffer = useRef(null); const schedulerId = useRef(null); const nextNoteTime = useRef(0); const current16thNote = useRef(0); const internalBpm = useRef(120); const trainerState = useRef({ active: false, target: 140, barsStep: 4, increment: 5, counter: 0, countInActive: false });
+            const [autoStop, setAutoStop] = useState(false);
+            const [stopMinutes, setStopMinutes] = useState(5);
+            const stopTimeoutRef = useRef(null);
+            
+            const noiseBuffer = useRef(null); const nextNoteTime = useRef(0); const current16thNote = useRef(0); const internalBpm = useRef(120); const trainerState = useRef({ active: false, target: 140, barsStep: 4, increment: 5, counter: 0, countInActive: false });
+            const schedulerId = useRef(null);
+            const currentSteps = useRef(16); // Dynamic steps support
 
             const scheduleNote = (beatNumber, time) => {
                 const { ctx, mixNode } = getAudioContext(); if(!ctx) return; if(!noiseBuffer.current) noiseBuffer.current = createNoiseBuffer(ctx);
-                if (beatNumber === 0 && trainerState.current.active && !trainerState.current.countInActive) { trainerState.current.counter++; setCurrentBarCount(trainerState.current.counter); if (trainerState.current.counter > trainerState.current.barsStep) { if (internalBpm.current < trainerState.current.target) { trainerState.current.countInActive = true; trainerState.current.counter = 0; setIsCountingIn(true); let nextBpm = internalBpm.current + trainerState.current.increment; if (nextBpm > trainerState.current.target) nextBpm = trainerState.current.target; internalBpm.current = nextBpm; setBpm(nextBpm); } } }
-                if (trainerState.current.countInActive) { if (beatNumber % 4 === 0) playClick(ctx, time, true, mixNode); if (beatNumber === 15) { trainerState.current.countInActive = false; setIsCountingIn(false); setCurrentBarCount(1); } return; }
-                if (selectedPattern === 'click') { if (beatNumber % 4 === 0) playClick(ctx, time, beatNumber === 0, mixNode); } else { const pattern = PATTERNS[selectedPattern]; if (!pattern) return; let playTime = time; if (pattern.swing && [2, 6, 10, 14].includes(beatNumber)) { const sixteenthTime = (60 / internalBpm.current) / 4; playTime += sixteenthTime * 0.33; } pattern.data.forEach(note => { if (note.s === beatNumber) { if (note.t === 'K') playKick(ctx, playTime, mixNode); if (note.t === 'S') playSnare(ctx, playTime, noiseBuffer.current, mixNode); if (note.t === 'H') playHiHat(ctx, playTime, noiseBuffer.current, note.open, mixNode); } }); }
+                
+                // Trainer Logic (Reset count based on pattern length usually 1 bar)
+                // Assuming 1 bar is the cycle.
+                if (beatNumber === 0 && trainerState.current.active && !trainerState.current.countInActive) { 
+                    trainerState.current.counter++; 
+                    setCurrentBarCount(trainerState.current.counter); 
+                    if (trainerState.current.counter > trainerState.current.barsStep) { 
+                        if (internalBpm.current < trainerState.current.target) { 
+                            trainerState.current.countInActive = true; 
+                            trainerState.current.counter = 0; 
+                            setIsCountingIn(true); 
+                            let nextBpm = internalBpm.current + trainerState.current.increment; 
+                            if (nextBpm > trainerState.current.target) nextBpm = trainerState.current.target; 
+                            internalBpm.current = nextBpm; 
+                            setBpm(nextBpm); 
+                        } 
+                    } 
+                }
+                
+                if (trainerState.current.countInActive) { 
+                    // Count-In is always 4/4 clicks
+                    if (beatNumber % 4 === 0) playClick(ctx, time, false, mixNode); // All same sound
+                    // Count in ends after 4 beats. Since pattern can be 12 steps, we must track real beats or just use 16 steps for count-in?
+                    // Let's assume count-in is always standard 16 steps (4 beats).
+                    if (beatNumber === 12) { // Last beat of 4/4 count in? 0, 4, 8, 12
+                         // Logic bit tricky with variable steps.
+                         // Simplification: Count-in runs for 4 clicks.
+                    }
+                    // For now, if we are in count-in, we just play clicks.
+                    // We need to switch off count-in.
+                    // If pattern is 12 steps, beatNumber goes 0..11.
+                    // We need a separate counter for count-in? Or force count-in to be 1 bar of 4/4?
+                    // Let's force count-in to be handled by 16 steps cycle logic temporarily or just check time?
+                }
+                
+                if (trainerState.current.countInActive) {
+                    if (beatNumber % 4 === 0) playClick(ctx, time, false, mixNode);
+                    // Use a counter independent of steps? 
+                    // Let's just say count in finishes when bar resets.
+                    // But if bar is 12 steps, that's 3 beats.
+                    // 4 count in needs 16 steps.
+                    // To keep it simple: If count-in active, we treat as 16 steps 4/4.
+                } else {
+                    if (selectedPattern === 'click') { 
+                        if (beatNumber % 4 === 0) playClick(ctx, time, false, mixNode); 
+                    } else { 
+                        const pattern = PATTERNS[selectedPattern]; 
+                        if (!pattern) return; 
+                        let playTime = time; 
+                        if (pattern.swing && [2, 6, 10, 14].includes(beatNumber)) { 
+                            const sixteenthTime = (60 / internalBpm.current) / 4; 
+                            playTime += sixteenthTime * 0.33; 
+                        } 
+                        pattern.data.forEach(note => { 
+                            if (note.s === beatNumber) { 
+                                if (note.t === 'K') playKick(ctx, playTime, mixNode); 
+                                if (note.t === 'S') playSnare(ctx, playTime, noiseBuffer.current, mixNode); 
+                                if (note.t === 'H') playHiHat(ctx, playTime, noiseBuffer.current, note.open, mixNode); 
+                            } 
+                        }); 
+                    }
+                }
             };
-            const scheduler = () => { const { ctx } = getAudioContext(); if(!ctx) return; while (nextNoteTime.current < ctx.currentTime + 0.1) { scheduleNote(current16thNote.current, nextNoteTime.current); const secondsPerBeat = 60.0 / internalBpm.current; nextNoteTime.current += secondsPerBeat * 0.25; current16thNote.current = (current16thNote.current + 1) % 16; } schedulerId.current = window.setTimeout(scheduler, 25); };
-            const togglePlay = () => { if (isPlaying) { setIsPlaying(false); setIsCountingIn(false); window.clearTimeout(schedulerId.current); } else { const { ctx } = getAudioContext(); if(ctx.state === 'suspended') ctx.resume(); setIsPlaying(true); current16thNote.current = 0; nextNoteTime.current = ctx.currentTime + 0.05; internalBpm.current = parseInt(bpm); trainerState.current = { active: trainerMode, target: parseInt(targetBpm), barsStep: parseInt(barsPerStep), increment: parseInt(bpmIncrement), counter: 1, countInActive: false }; setCurrentBarCount(1); scheduler(); } };
+
+            const scheduler = () => { 
+                const { ctx } = getAudioContext(); if(!ctx) return; 
+                while (nextNoteTime.current < ctx.currentTime + 0.1) { 
+                    scheduleNote(current16thNote.current, nextNoteTime.current); 
+                    const secondsPerBeat = 60.0 / internalBpm.current; 
+                    nextNoteTime.current += secondsPerBeat * 0.25; 
+                    
+                    // Logic for pattern length
+                    let limit = PATTERNS[selectedPattern].steps;
+                    // Force 16 steps for count-in (4 beats)
+                    if(trainerState.current.countInActive) limit = 16;
+                    
+                    current16thNote.current++;
+                    if(current16thNote.current >= limit) {
+                        current16thNote.current = 0;
+                        // Turn off count-in at end of bar
+                        if(trainerState.current.countInActive) {
+                            trainerState.current.countInActive = false;
+                            setIsCountingIn(false);
+                            setCurrentBarCount(1);
+                        }
+                    }
+                } 
+                schedulerId.current = window.setTimeout(scheduler, 25); 
+            };
+            
+            const stopMetronome = () => {
+                setIsPlaying(false);
+                setIsCountingIn(false);
+                window.clearTimeout(schedulerId.current);
+                if(stopTimeoutRef.current) clearTimeout(stopTimeoutRef.current);
+            };
+
+            const togglePlay = () => {
+                if (isPlaying) {
+                    stopMetronome();
+                } else {
+                    const { ctx } = getAudioContext();
+                    if(ctx.state === 'suspended') ctx.resume();
+                    setIsPlaying(true);
+                    current16thNote.current = 0;
+                    nextNoteTime.current = ctx.currentTime + 0.05;
+                    internalBpm.current = parseInt(bpm);
+                    
+                    trainerState.current = { active: trainerMode, target: parseInt(targetBpm), barsStep: parseInt(barsPerStep), increment: parseInt(bpmIncrement), counter: 1, countInActive: autoStop || trainerMode }; 
+                    if(autoStop || trainerMode) setIsCountingIn(true);
+                    
+                    setCurrentBarCount(1);
+                    scheduler();
+
+                    if (autoStop) {
+                        const durationMs = stopMinutes * 60 * 1000;
+                        stopTimeoutRef.current = setTimeout(() => {
+                            stopMetronome();
+                            playAlarm();
+                        }, durationMs);
+                    }
+                }
+            };
+            
+            useEffect(() => { return () => { window.clearTimeout(schedulerId.current); clearTimeout(stopTimeoutRef.current); } }, []);
             useEffect(() => { if (!trainerMode) internalBpm.current = bpm; }, [bpm, trainerMode]);
             useEffect(() => { if(isPlaying && trainerMode) { trainerState.current.target = parseInt(targetBpm); trainerState.current.barsStep = parseInt(barsPerStep); trainerState.current.increment = parseInt(bpmIncrement); trainerState.current.active = true; } }, [targetBpm, barsPerStep, bpmIncrement, isPlaying, trainerMode]);
-            return ( <div className="bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700 h-full flex flex-col justify-between"><div className="flex justify-between items-start mb-4"><div className="flex items-center space-x-2"><IconMetronome className="text-amber-500 w-6 h-6" /><h2 className="text-xl font-bold text-white">リズム & ドラム</h2></div><div className={`px-2 py-0.5 rounded text-xs font-bold ${isCountingIn ? 'bg-rose-500 text-white animate-pulse' : 'bg-transparent text-transparent'}`}>COUNT IN</div></div><div className="flex flex-col items-center mb-6 bg-slate-900/50 p-4 rounded-lg border border-slate-700/50 relative overflow-hidden flex-grow justify-center"><div className="flex items-baseline space-x-2 z-10"><span className="text-5xl font-mono text-amber-500 font-bold">{bpm}</span><span className="text-sm text-slate-400">BPM</span></div>{trainerMode && isPlaying && (<div className="text-xs text-slate-400 mt-1 z-10 flex gap-4"><span>Target: {targetBpm}</span><span className={isCountingIn ? "text-slate-600" : "text-emerald-400"}>Bar: {currentBarCount}/{barsPerStep}</span></div>)}<div className={`absolute bottom-0 left-0 h-1 bg-amber-500 transition-all duration-75 ${isPlaying ? 'opacity-100' : 'opacity-0'}`} style={{width: '100%', transform: `scaleX(${isPlaying ? (current16thNote.current % 4 === 0 ? 1 : 0) : 0})`}}></div></div><div className="space-y-4"><div><label className="text-xs text-slate-400 mb-1 block">リズムパターン</label><select value={selectedPattern} onChange={(e) => setSelectedPattern(e.target.value)} className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">{Object.keys(PATTERNS).map(key => (<option key={key} value={key}>{PATTERNS[key].name}</option>))}</select></div><div><input type="range" min="40" max="240" value={bpm} onChange={(e) => { setBpm(e.target.value); if(trainerMode) setTrainerMode(false); }} className="w-full h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-amber-500"/></div><div className="bg-slate-700/30 p-3 rounded border border-slate-600/50"><div className="flex items-center justify-between mb-3"><span className="text-sm font-bold text-slate-300 flex items-center"><IconSettings className="w-4 h-4 mr-1"/> スピードトレーナー</span><button onClick={() => setTrainerMode(!trainerMode)} className={`w-10 h-5 rounded-full relative transition-colors ${trainerMode ? 'bg-emerald-500' : 'bg-slate-600'}`}><div className={`w-3 h-3 bg-white rounded-full absolute top-1 transition-transform ${trainerMode ? 'left-6' : 'left-1'}`}></div></button></div>{trainerMode && (<div className="grid grid-cols-3 gap-2 text-xs"><div><label className="block text-slate-500 mb-1">目標BPM</label><input type="number" value={targetBpm} onChange={e=>setTargetBpm(e.target.value)} className="w-full bg-slate-800 rounded px-2 py-1 text-white border border-slate-600" /></div><div><label className="block text-slate-500 mb-1">小節数</label><input type="number" value={barsPerStep} onChange={e=>setBarsPerStep(e.target.value)} className="w-full bg-slate-800 rounded px-2 py-1 text-white border border-slate-600" /></div><div><label className="block text-slate-500 mb-1">上昇幅</label><input type="number" value={bpmIncrement} onChange={e=>setBpmIncrement(e.target.value)} className="w-full bg-slate-800 rounded px-2 py-1 text-white border border-slate-600" /></div></div>)}</div><button onClick={togglePlay} className={`w-full py-3 rounded-lg font-bold flex items-center justify-center transition-all ${isPlaying ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-amber-500 hover:bg-amber-600 text-slate-900'}`}>{isPlaying ? <><IconPause className="mr-2"/> 停止</> : <><IconPlay className="mr-2"/> スタート</>}</button></div> </div> );
+            
+            return ( <div className="bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700 h-full flex flex-col justify-between"><div className="flex justify-between items-start mb-4"><div className="flex items-center space-x-2"><IconMetronome className="text-amber-500 w-6 h-6" /><h2 className="text-xl font-bold text-white">リズム & ドラム</h2></div><div className={`px-2 py-0.5 rounded text-xs font-bold ${isCountingIn ? 'bg-rose-500 text-white animate-pulse' : 'bg-transparent text-transparent'}`}>COUNT IN</div></div><div className="flex flex-col items-center mb-6 bg-slate-900/50 p-4 rounded-lg border border-slate-700/50 relative overflow-hidden flex-grow justify-center"><div className="flex items-baseline space-x-2 z-10"><span className="text-5xl font-mono text-amber-500 font-bold">{bpm}</span><span className="text-sm text-slate-400">BPM</span></div>{trainerMode && isPlaying && (<div className="text-xs text-slate-400 mt-1 z-10 flex gap-4"><span>Target: {targetBpm}</span><span className={isCountingIn ? "text-slate-600" : "text-emerald-400"}>Bar: {currentBarCount}/{barsPerStep}</span></div>)}<div className={`absolute bottom-0 left-0 h-1 bg-amber-500 transition-all duration-75 ${isPlaying ? 'opacity-100' : 'opacity-0'}`} style={{width: '100%', transform: `scaleX(${isPlaying ? (current16thNote.current % 4 === 0 ? 1 : 0) : 0})`}}></div></div><div className="space-y-3"><div><label className="text-xs text-slate-400 mb-1 block">リズムパターン</label><select value={selectedPattern} onChange={(e) => setSelectedPattern(e.target.value)} className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-2 text-white text-sm focus:outline-none focus:border-amber-500">{Object.keys(PATTERNS).map(key => (<option key={key} value={key}>{PATTERNS[key].name}</option>))}</select></div><div><input type="range" min="40" max="240" value={bpm} onChange={(e) => { setBpm(e.target.value); if(trainerMode) setTrainerMode(false); }} className="w-full h-2 bg-slate-600 rounded-lg appearance-none cursor-pointer accent-amber-500"/></div>
+            
+            {/* Auto Stop Settings */}
+            <div className="flex items-center justify-between text-xs text-slate-400 bg-slate-700/30 p-2 rounded">
+                <label className="flex items-center"><input type="checkbox" checked={autoStop} onChange={(e)=>setAutoStop(e.target.checked)} className="mr-2 accent-amber-500"/> 自動停止タイマー</label>
+                {autoStop && (<div className="flex items-center"><input type="number" value={stopMinutes} onChange={(e)=>setStopMinutes(e.target.value)} className="w-10 bg-slate-800 text-center border border-slate-600 rounded mx-1"/>分</div>)}
+            </div>
+
+            <div className="bg-slate-700/30 p-2 rounded border border-slate-600/50"><div className="flex items-center justify-between"><span className="text-xs font-bold text-slate-300 flex items-center"><IconSettings className="w-3 h-3 mr-1"/> スピードトレーナー</span><button onClick={() => setTrainerMode(!trainerMode)} className={`w-8 h-4 rounded-full relative transition-colors ${trainerMode ? 'bg-emerald-500' : 'bg-slate-600'}`}><div className={`w-2 h-2 bg-white rounded-full absolute top-1 transition-transform ${trainerMode ? 'left-5' : 'left-1'}`}></div></button></div>{trainerMode && (<div className="grid grid-cols-3 gap-2 text-[10px] mt-2"><div><label>目標</label><input type="number" value={targetBpm} onChange={e=>setTargetBpm(e.target.value)} className="w-full bg-slate-800 px-1" /></div><div><label>小節</label><input type="number" value={barsPerStep} onChange={e=>setBarsPerStep(e.target.value)} className="w-full bg-slate-800 px-1" /></div><div><label>上昇</label><input type="number" value={bpmIncrement} onChange={e=>setBpmIncrement(e.target.value)} className="w-full bg-slate-800 px-1" /></div></div>)}</div>
+            
+            <button onClick={togglePlay} className={`w-full py-3 rounded-lg font-bold flex items-center justify-center transition-all ${isPlaying ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-amber-500 hover:bg-amber-600 text-slate-900'}`}>{isPlaying ? <><IconPause className="mr-2"/> 停止</> : <><IconPlay className="mr-2"/> スタート</>}</button></div> </div> );
         };
 
         // --- Recorder (Unchanged) ---
@@ -131,8 +410,9 @@
             return ( <div className="bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700 h-full flex flex-col justify-between"><div className="flex items-center justify-between mb-4"><div className="flex items-center space-x-2"><IconMic className="text-rose-500 w-6 h-6" /><h2 className="text-xl font-bold text-white">クイック録音</h2></div></div><div className="flex flex-col items-center justify-center h-40 bg-slate-900 rounded-lg border border-slate-700 mb-4 overflow-hidden relative flex-grow">{isRecording && (<div className="absolute inset-0 flex items-center justify-center"><div className="animate-pulse w-24 h-24 bg-rose-500/20 rounded-full blur-xl"></div><span className="relative z-10 text-rose-500 font-mono animate-pulse">RECORDING...</span></div>)}{!isRecording && !audioUrl && (<div className="text-center p-4"><p className="text-slate-500 text-sm mb-1">演奏を録音してログに残せます</p><p className="text-[10px] text-slate-600">※{isMixMode ? "イヤホン推奨 (BPM/音源もMixされます)" : "マイク入力のみ録音されます"}</p></div>)}{!isRecording && audioUrl && (<div className="w-full flex flex-col items-center justify-center p-2"><audio controls src={audioUrl} className="w-11/12 h-8 mb-2" /><span className="text-emerald-400 text-xs flex items-center"><IconCheck className="w-3 h-3 mr-1"/> 添付済み</span></div>)}</div><div className="mb-4 flex items-center justify-center"><div className="relative inline-block w-48 align-middle select-none transition duration-200 ease-in"><div className="flex items-center justify-center bg-slate-700 rounded-lg p-1 border border-slate-600"><button onClick={() => !isRecording && setIsMixMode(false)} className={`w-1/2 py-1 text-xs font-bold rounded transition-all ${!isMixMode ? 'bg-slate-500 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`} disabled={isRecording}>マイクのみ</button><button onClick={() => !isRecording && setIsMixMode(true)} className={`w-1/2 py-1 text-xs font-bold rounded transition-all ${isMixMode ? 'bg-rose-500 text-white shadow' : 'text-slate-400 hover:text-slate-200'}`} disabled={isRecording}>Mix録音</button></div></div></div><button onClick={isRecording ? stopRecording : startRecording} className={`w-full py-3 rounded-lg font-bold flex items-center justify-center transition-all ${isRecording ? 'bg-slate-700 hover:bg-slate-600 text-white border border-rose-500/50' : 'bg-rose-500 hover:bg-rose-600 text-white'}`}>{isRecording ? <><IconCheck className="mr-2"/> 完了</> : <><IconMic className="mr-2"/> 録音開始</>}</button></div> );
         };
 
-        // --- Backing Track Component (Double Layer Canvas) ---
+        // --- Backing Track Component (Updated - YouTube Removed) ---
         const BackingTrack = ({ getAudioContext }) => {
+            // File Mode State -> Main State
             const [audioSrc, setAudioSrc] = useState(null);
             const [fileName, setFileName] = useState("");
             const [playbackRate, setPlaybackRate] = useState(1.0);
@@ -354,7 +634,12 @@
 
             return (
                 <div className="col-span-1 md:col-span-4 bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700 h-full flex flex-col justify-between">
-                    <div className="flex items-center space-x-2 mb-4"><IconMusic className="text-pink-400 w-6 h-6" /><h2 className="text-xl font-bold text-white">バッキングトラック (mp3/wav)</h2></div>
+                    <div className="flex justify-between items-center mb-4">
+                        <div className="flex items-center space-x-2"><IconMusic className="text-pink-400 w-6 h-6" /><h2 className="text-xl font-bold text-white">バッキングトラック (mp3/wav)</h2></div>
+                        {/* YouTube Toggle Removed */}
+                    </div>
+                    
+                    {/* Always File Mode UI */}
                     <div className="bg-slate-900/50 p-6 rounded-lg border border-slate-700/50 flex flex-col items-center justify-center flex-grow">
                         {!audioSrc ? ( <div className="w-full h-32 border-2 border-dashed border-slate-600 rounded-lg flex flex-col items-center justify-center text-slate-500 hover:border-pink-400 hover:text-pink-400 transition-colors relative group bg-slate-800/50"><IconUpload className="w-10 h-10 mb-3 group-hover:scale-110 transition-transform" /><span className="font-bold">ファイルを選択</span><input type="file" accept="audio/*" onChange={handleFileChange} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"/></div> ) : (
                             <div className="w-full">
@@ -386,6 +671,7 @@
             );
         };
 
+        // --- Stats & Practice Log (Unchanged) ---
         const VisualStats = ({ logs }) => {
             const days = useMemo(() => {
                 const result = [];
@@ -397,237 +683,32 @@
                 }
                 return result;
             }, [logs]);
-            return (
-                <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 mb-6">
-                    <div className="flex items-center space-x-2 mb-4"><IconCalendar className="text-emerald-400 w-5 h-5" /><h3 className="text-sm font-bold text-white">直近4週間の活動</h3></div>
-                    <div className="heatmap-grid">{days.map((day, i) => { let color = 'bg-slate-800 border-slate-700'; if (day.duration > 0) color = 'bg-emerald-900 border-emerald-800'; if (day.duration > 15) color = 'bg-emerald-700 border-emerald-600'; if (day.duration > 45) color = 'bg-emerald-500 border-emerald-400'; if (day.duration > 90) color = 'bg-emerald-400 border-emerald-300'; return (<div key={i} className={`h-8 rounded border ${color} relative group transition-all hover:scale-105`}><div className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-black text-white text-xs rounded whitespace-nowrap z-10 pointer-events-none">{day.date.split('/')[1]}/{day.date.split('/')[2]}: {day.duration}分</div></div>) })}</div>
-                </div>
-            );
+            return ( <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 mb-6"><div className="flex items-center space-x-2 mb-4"><IconCalendar className="text-emerald-400 w-5 h-5" /><h3 className="text-sm font-bold text-white">直近4週間の活動</h3></div><div className="heatmap-grid">{days.map((day, i) => { let color = 'bg-slate-800 border-slate-700'; if (day.duration > 0) color = 'bg-emerald-900 border-emerald-800'; if (day.duration > 15) color = 'bg-emerald-700 border-emerald-600'; if (day.duration > 45) color = 'bg-emerald-500 border-emerald-400'; if (day.duration > 90) color = 'bg-emerald-400 border-emerald-300'; return (<div key={i} className={`h-8 rounded border ${color} relative group transition-all hover:scale-105`}><div className="opacity-0 group-hover:opacity-100 absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 bg-black text-white text-xs rounded whitespace-nowrap z-10 pointer-events-none">{day.date.split('/')[1]}/{day.date.split('/')[2]}: {day.duration}分</div></div>) })}</div></div> );
         };
 
-        // --- EXTENDED BADGE LOGIC (100+ conditions) ---
-        const ALL_BADGES = [
-            { id: 't1', name: '初めの一歩', desc: '最初の練習', check: (l,m) => l.length >= 1, color: 'text-emerald-300' },
-            { id: 't2', name: '3時間経過', desc: '総練習3時間', check: (l,m) => m >= 180, color: 'text-emerald-400' },
-            { id: 't3', name: '10時間経過', desc: '総練習10時間', check: (l,m) => m >= 600, color: 'text-emerald-500' },
-            { id: 't4', name: '24時間テレビ', desc: '丸一日分の練習', check: (l,m) => m >= 1440, color: 'text-emerald-600' },
-            { id: 't5', name: '50時間', desc: '習慣の力', check: (l,m) => m >= 3000, color: 'text-teal-400' },
-            { id: 't6', name: '100時間', desc: '努力の結晶', check: (l,m) => m >= 6000, color: 'text-teal-500' },
-            { id: 't7', name: '300時間', desc: '中級者への道', check: (l,m) => m >= 18000, color: 'text-teal-600' },
-            { id: 't8', name: '500時間', desc: 'セミプロ級', check: (l,m) => m >= 30000, color: 'text-purple-500' },
-            { id: 't9', name: '1000時間', desc: '達人への道', check: (l,m) => m >= 60000, color: 'text-purple-600' },
-            { id: 't10', name: '10000時間', desc: 'マエストロ', check: (l,m) => m >= 600000, color: 'text-yellow-500' },
-            { id: 'c1', name: '三日坊主回避', desc: '3回記録', check: (l) => l.length >= 3, color: 'text-blue-300' },
-            { id: 'c2', name: '10回記録', desc: '10回記録', check: (l) => l.length >= 10, color: 'text-blue-400' },
-            { id: 'c3', name: '30回記録', desc: '30回記録', check: (l) => l.length >= 30, color: 'text-blue-500' },
-            { id: 'c4', name: '50回記録', desc: '50回記録', check: (l) => l.length >= 50, color: 'text-blue-600' },
-            { id: 'c5', name: '100回記録', desc: '100回記録', check: (l) => l.length >= 100, color: 'text-indigo-400' },
-            { id: 'c6', name: '200回記録', desc: '200回記録', check: (l) => l.length >= 200, color: 'text-indigo-500' },
-            { id: 'c7', name: '365回記録', desc: '毎日コツコツ', check: (l) => l.length >= 365, color: 'text-indigo-600' },
-            { id: 'd1', name: 'サクッと', desc: '5分以下の練習', check: (l) => l.some(x => x.duration <= 5), color: 'text-amber-300' },
-            { id: 'd2', name: '標準セット', desc: '30分の練習', check: (l) => l.some(x => x.duration === 30), color: 'text-amber-400' },
-            { id: 'd3', name: 'ガッツリ', desc: '60分以上の練習', check: (l) => l.some(x => x.duration >= 60), color: 'text-amber-500' },
-            { id: 'd4', name: 'ロングラン', desc: '90分以上の練習', check: (l) => l.some(x => x.duration >= 90), color: 'text-amber-600' },
-            { id: 'd5', name: 'マラソン', desc: '120分以上の練習', check: (l) => l.some(x => x.duration >= 120), color: 'text-red-400' },
-            { id: 'd6', name: '耐久レース', desc: '180分以上の練習', check: (l) => l.some(x => x.duration >= 180), color: 'text-red-500' },
-            { id: 'h1', name: '早起き鳥', desc: '4:00-5:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h >= 4 && h < 6; }), color: 'text-sky-400' },
-            { id: 'h2', name: '朝活', desc: '6:00-8:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h >= 6 && h < 9; }), color: 'text-sky-500' },
-            { id: 'h3', name: 'ランチタイム', desc: '12:00-12:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h === 12; }), color: 'text-yellow-400' },
-            { id: 'h4', name: '午後ティー', desc: '15:00-15:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h === 15; }), color: 'text-orange-300' },
-            { id: 'h5', name: '夕暮れ', desc: '17:00-18:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h >= 17 && h < 19; }), color: 'text-orange-500' },
-            { id: 'h6', name: 'プライムタイム', desc: '20:00-21:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h >= 20 && h < 22; }), color: 'text-indigo-400' },
-            { id: 'h7', name: '夜更かし', desc: '23:00-0:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h === 23 || h === 0; }), color: 'text-indigo-600' },
-            { id: 'h8', name: '丑三つ時', desc: '1:00-3:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h >= 1 && h < 4; }), color: 'text-purple-700' },
-            { id: 'w1', name: 'ブルーマンデー', desc: '月曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 1), color: 'text-blue-400' },
-            { id: 'w2', name: '火曜サスペンス', desc: '火曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 2), color: 'text-red-400' },
-            { id: 'w3', name: '水曜どうでしょう', desc: '水曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 3), color: 'text-cyan-400' },
-            { id: 'w4', name: '木曜の安らぎ', desc: '木曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 4), color: 'text-green-400' },
-            { id: 'w5', name: '華金', desc: '金曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 5), color: 'text-yellow-400' },
-            { id: 'w6', name: '土曜の朝', desc: '土曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 6), color: 'text-indigo-400' },
-            { id: 'w7', name: '日曜の夜', desc: '日曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 0), color: 'text-rose-400' },
-            { id: 'w8', name: 'フルコンプ', desc: '全曜日に練習実績あり', check: (l) => { const days = new Set(l.map(x=>new Date(x.date).getDay())); return days.size === 7; }, color: 'text-white' },
-            { id: 'st1', name: '連日', desc: '2日連続', check: (l) => hasStreak(l,2), color: 'text-lime-300' },
-            { id: 'st2', name: '三日連続', desc: '3日連続', check: (l) => hasStreak(l,3), color: 'text-lime-400' },
-            { id: 'st3', name: '五日連続', desc: '5日連続', check: (l) => hasStreak(l,5), color: 'text-lime-500' },
-            { id: 'st4', name: '一週間', desc: '7日連続', check: (l) => hasStreak(l,7), color: 'text-lime-600' },
-            { id: 'st5', name: '二週間', desc: '14日連続', check: (l) => hasStreak(l,14), color: 'text-green-500' },
-            { id: 'st6', name: '一ヶ月', desc: '30日連続', check: (l) => hasStreak(l,30), color: 'text-green-600' },
-            { id: 'kw1', name: 'スケール', desc: '内容に「スケール」', check: (l) => l.some(x => x.content.includes('スケール')), color: 'text-slate-300' },
-            { id: 'kw2', name: 'コード', desc: '内容に「コード」', check: (l) => l.some(x => x.content.includes('コード')), color: 'text-slate-300' },
-            { id: 'kw3', name: 'カッティング', desc: '内容に「カッティング」', check: (l) => l.some(x => x.content.includes('カッティング')), color: 'text-slate-300' },
-            { id: 'kw4', name: 'アルペジオ', desc: '内容に「アルペジオ」', check: (l) => l.some(x => x.content.includes('アルペジオ')), color: 'text-slate-300' },
-            { id: 'kw5', name: 'アドリブ', desc: '内容に「アドリブ」', check: (l) => l.some(x => x.content.includes('アドリブ')), color: 'text-slate-300' },
-            { id: 'kw6', name: 'チョーキング', desc: '内容に「チョーキング」', check: (l) => l.some(x => x.content.includes('チョーキング')), color: 'text-slate-300' },
-            { id: 'kw7', name: 'スウィープ', desc: '内容に「スウィープ」', check: (l) => l.some(x => x.content.includes('スウィープ')), color: 'text-slate-300' },
-            { id: 'kw8', name: 'タッピング', desc: '内容に「タッピング」', check: (l) => l.some(x => x.content.includes('タッピング')), color: 'text-slate-300' },
-            { id: 'kw9', name: '耳コピ', desc: '内容に「耳コピ」', check: (l) => l.some(x => x.content.includes('耳コピ')), color: 'text-slate-300' },
-            { id: 'kw10', name: '作詞作曲', desc: '内容に「作曲」or「作詞」', check: (l) => l.some(x => x.content.includes('作曲')||x.content.includes('作詞')), color: 'text-slate-300' },
-            { id: 'kw11', name: '基礎', desc: '内容に「基礎」', check: (l) => l.some(x => x.content.includes('基礎')), color: 'text-slate-300' },
-            { id: 'kw12', name: '理論', desc: '内容に「理論」', check: (l) => l.some(x => x.content.includes('理論')), color: 'text-slate-300' },
-            { id: 'kw13', name: '模写', desc: '内容に「コピー」', check: (l) => l.some(x => x.content.includes('コピー')), color: 'text-slate-300' },
-            { id: 'kw14', name: 'メンテナンス', desc: '内容に「弦交換」or「掃除」', check: (l) => l.some(x => x.content.includes('弦交換')||x.content.includes('掃除')), color: 'text-slate-300' },
-            { id: 'bpm1', name: '超スロー', desc: 'BPM 40-59', check: (l) => l.some(x => x.bpm >= 40 && x.bpm < 60), color: 'text-blue-200' },
-            { id: 'bpm2', name: 'ゆったり', desc: 'BPM 60-79', check: (l) => l.some(x => x.bpm >= 60 && x.bpm < 80), color: 'text-blue-300' },
-            { id: 'bpm3', name: 'ミディアム', desc: 'BPM 100-119', check: (l) => l.some(x => x.bpm >= 100 && x.bpm < 120), color: 'text-blue-400' },
-            { id: 'bpm4', name: 'アップテンポ', desc: 'BPM 140-159', check: (l) => l.some(x => x.bpm >= 140 && x.bpm < 160), color: 'text-red-400' },
-            { id: 'bpm5', name: 'ファスト', desc: 'BPM 180-199', check: (l) => l.some(x => x.bpm >= 180 && x.bpm < 200), color: 'text-red-500' },
-            { id: 'bpm6', name: '超速', desc: 'BPM 200以上', check: (l) => l.some(x => x.bpm >= 200), color: 'text-red-600 animate-pulse' },
-            { id: 'tool1', name: '録音デビュー', desc: '録音機能を使用', check: (l) => l.some(x => x.audio), color: 'text-pink-400' },
-            { id: 'tool2', name: '録音マニア', desc: '録音10回以上', check: (l) => l.filter(x => x.audio).length >= 10, color: 'text-pink-500' },
-            { id: 'tool3', name: 'クリックのみ', desc: 'BPM設定ありで記録', check: (l) => l.some(x => x.bpm > 0), color: 'text-yellow-600' },
-            { id: 'sp1', name: 'ゾロ目', desc: '11:11 or 22:22', check: (l) => l.some(x => x.time === '11:11' || x.time === '22:22'), color: 'text-yellow-300' },
-            { id: 'sp2', name: '元旦', desc: '1/1に練習', check: (l) => l.some(x => x.date.includes('/1/1')), color: 'text-red-300' },
-            { id: 'sp3', name: '大晦日', desc: '12/31に練習', check: (l) => l.some(x => x.date.includes('/12/31')), color: 'text-white' },
-            { id: 'sp4', name: 'クリスマス', desc: '12/24 or 25に練習', check: (l) => l.some(x => x.date.includes('/12/24')||x.date.includes('/12/25')), color: 'text-green-400' },
-            { id: 'sp5', name: 'バレンタイン', desc: '2/14に練習', check: (l) => l.some(x => x.date.includes('/2/14')), color: 'text-pink-300' },
-            { id: 'sp6', name: 'ハロウィン', desc: '10/31に練習', check: (l) => l.some(x => x.date.includes('/10/31')), color: 'text-orange-400' },
-            { id: 'sp7', name: 'エイプリル', desc: '4/1に練習', check: (l) => l.some(x => x.date.includes('/4/1')), color: 'text-sky-300' },
-            { id: 'sp8', name: '七夕', desc: '7/7に練習', check: (l) => l.some(x => x.date.includes('/7/7')), color: 'text-blue-300' },
-            { id: 'sp9', name: 'キリ番', desc: 'ログID下2桁00', check: (l) => l.some(x => String(x.id).endsWith('00')), color: 'text-purple-300' },
-            { id: 'i1', name: 'ダブルヘッダー', desc: '1日2回練習', check: (l) => { const c={}; l.forEach(x=>c[x.date]=(c[x.date]||0)+1); return Object.values(c).some(n=>n>=2); }, color: 'text-rose-300' },
-            { id: 'i2', name: 'トリプル', desc: '1日3回練習', check: (l) => { const c={}; l.forEach(x=>c[x.date]=(c[x.date]||0)+1); return Object.values(c).some(n=>n>=3); }, color: 'text-rose-400' },
-            { id: 'i3', name: '合宿モード', desc: '1日5回練習', check: (l) => { const c={}; l.forEach(x=>c[x.date]=(c[x.date]||0)+1); return Object.values(c).some(n=>n>=5); }, color: 'text-rose-500' }
-        ];
-
-        const hasStreak = (logs, days) => {
-            if (logs.length < days) return false;
-            const dates = [...new Set(logs.map(l => l.date))].sort((a,b) => new Date(b) - new Date(a));
-            let streak = 0;
-            for (let i = 0; i < dates.length - 1; i++) {
-                const diff = Math.ceil(Math.abs(new Date(dates[i]) - new Date(dates[i+1])) / (86400000));
-                if (diff === 1) streak++; else streak = 0;
-                if (streak >= days - 1) return true;
-            }
-            return false;
-        };
-
-        const Stats = ({ logs }) => {
-            const totalMinutes = logs.reduce((acc, log) => acc + parseInt(log.duration || 0), 0);
-            const totalHours = (totalMinutes / 60).toFixed(1);
-            const unlockedBadges = useMemo(() => ALL_BADGES.filter(b => b.check(logs, totalMinutes)), [logs, totalMinutes]);
-
-            return (
-                <div className="col-span-1 md:col-span-2 bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700 h-full">
-                    <div className="flex items-center space-x-2 mb-6"><IconAward className="text-yellow-500 w-6 h-6" /><h2 className="text-xl font-bold text-white">実績と目標</h2></div>
-                    <div className="flex flex-col gap-6">
-                        <div>
-                            <div className="bg-slate-700/50 p-4 rounded-lg mb-4">
-                                <h3 className="text-slate-400 text-sm mb-1">総練習時間</h3>
-                                <div className="flex items-end space-x-2"><span className="text-4xl font-bold text-white">{totalHours}</span><span className="text-lg text-slate-400 mb-1">時間</span></div>
-                                <div className="mt-2 text-xs text-slate-500">獲得バッジ: <span className="text-white font-bold">{unlockedBadges.length}</span> / {ALL_BADGES.length}</div>
-                            </div>
-                            <VisualStats logs={logs} />
-                        </div>
-                        <div className="content-start flex-grow flex flex-col min-h-0">
-                            <h3 className="text-xs font-bold text-slate-400 mb-2 flex-shrink-0">獲得済みバッジ ({unlockedBadges.length})</h3>
-                            <div className="flex-grow overflow-y-auto custom-scrollbar pr-2 max-h-[280px] bg-slate-900/20 rounded-lg p-1 border border-slate-700/30">
-                                {unlockedBadges.length === 0 ? ( 
-                                    <div className="text-slate-500 text-xs italic p-4 border border-slate-700 rounded border-dashed text-center h-full flex items-center justify-center">まだバッジがありません。<br/>練習を記録してコレクションを増やそう！</div> 
-                                ) : (
-                                    <div className="grid grid-cols-2 gap-2">
-                                        {unlockedBadges.map(badge => (
-                                            <div key={badge.id} className="p-2 rounded-lg border bg-slate-700/50 border-slate-600 animate-fade-in hover:bg-slate-700 transition-colors flex flex-col justify-center">
-                                                <div className="flex items-center space-x-1 mb-1">
-                                                    <IconZap className={`w-3 h-3 ${badge.color} flex-shrink-0`} />
-                                                    <span className="font-bold text-xs text-white truncate">{badge.name}</span>
-                                                </div>
-                                                <p className="text-[10px] text-slate-400 leading-tight line-clamp-2">{badge.desc}</p>
-                                            </div>
-                                        ))}
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            );
-        };
-
+        const ALL_BADGES = [ { id: 't1', name: '初めの一歩', desc: '最初の練習', check: (l,m) => l.length >= 1, color: 'text-emerald-300' }, { id: 't2', name: '3時間経過', desc: '総練習3時間', check: (l,m) => m >= 180, color: 'text-emerald-400' }, { id: 't3', name: '10時間経過', desc: '総練習10時間', check: (l,m) => m >= 600, color: 'text-emerald-500' }, { id: 't4', name: '24時間テレビ', desc: '丸一日分の練習', check: (l,m) => m >= 1440, color: 'text-emerald-600' }, { id: 't5', name: '50時間', desc: '習慣の力', check: (l,m) => m >= 3000, color: 'text-teal-400' }, { id: 't6', name: '100時間', desc: '努力の結晶', check: (l,m) => m >= 6000, color: 'text-teal-500' }, { id: 't7', name: '300時間', desc: '中級者への道', check: (l,m) => m >= 18000, color: 'text-teal-600' }, { id: 't8', name: '500時間', desc: 'セミプロ級', check: (l,m) => m >= 30000, color: 'text-purple-500' }, { id: 't9', name: '1000時間', desc: '達人への道', check: (l,m) => m >= 60000, color: 'text-purple-600' }, { id: 't10', name: '10000時間', desc: 'マエストロ', check: (l,m) => m >= 600000, color: 'text-yellow-500' }, { id: 'c1', name: '三日坊主回避', desc: '3回記録', check: (l) => l.length >= 3, color: 'text-blue-300' }, { id: 'c2', name: '10回記録', desc: '10回記録', check: (l) => l.length >= 10, color: 'text-blue-400' }, { id: 'c3', name: '30回記録', desc: '30回記録', check: (l) => l.length >= 30, color: 'text-blue-500' }, { id: 'c4', name: '50回記録', desc: '50回記録', check: (l) => l.length >= 50, color: 'text-blue-600' }, { id: 'c5', name: '100回記録', desc: '100回記録', check: (l) => l.length >= 100, color: 'text-indigo-400' }, { id: 'c6', name: '200回記録', desc: '200回記録', check: (l) => l.length >= 200, color: 'text-indigo-500' }, { id: 'c7', name: '365回記録', desc: '毎日コツコツ', check: (l) => l.length >= 365, color: 'text-indigo-600' }, { id: 'd1', name: 'サクッと', desc: '5分以下の練習', check: (l) => l.some(x => x.duration <= 5), color: 'text-amber-300' }, { id: 'd2', name: '標準セット', desc: '30分の練習', check: (l) => l.some(x => x.duration === 30), color: 'text-amber-400' }, { id: 'd3', name: 'ガッツリ', desc: '60分以上の練習', check: (l) => l.some(x => x.duration >= 60), color: 'text-amber-500' }, { id: 'd4', name: 'ロングラン', desc: '90分以上の練習', check: (l) => l.some(x => x.duration >= 90), color: 'text-amber-600' }, { id: 'd5', name: 'マラソン', desc: '120分以上の練習', check: (l) => l.some(x => x.duration >= 120), color: 'text-red-400' }, { id: 'd6', name: '耐久レース', desc: '180分以上の練習', check: (l) => l.some(x => x.duration >= 180), color: 'text-red-500' }, { id: 'h1', name: '早起き鳥', desc: '4:00-5:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h >= 4 && h < 6; }), color: 'text-sky-400' }, { id: 'h2', name: '朝活', desc: '6:00-8:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h >= 6 && h < 9; }), color: 'text-sky-500' }, { id: 'h3', name: 'ランチタイム', desc: '12:00-12:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h === 12; }), color: 'text-yellow-400' }, { id: 'h4', name: '午後ティー', desc: '15:00-15:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h === 15; }), color: 'text-orange-300' }, { id: 'h5', name: '夕暮れ', desc: '17:00-18:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h >= 17 && h < 19; }), color: 'text-orange-500' }, { id: 'h6', name: 'プライムタイム', desc: '20:00-21:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h >= 20 && h < 22; }), color: 'text-indigo-400' }, { id: 'h7', name: '夜更かし', desc: '23:00-0:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h === 23 || h === 0; }), color: 'text-indigo-600' }, { id: 'h8', name: '丑三つ時', desc: '1:00-3:59開始', check: (l) => l.some(x => { const h = parseInt(x.time.split(':')[0]); return h >= 1 && h < 4; }), color: 'text-purple-700' }, { id: 'w1', name: 'ブルーマンデー', desc: '月曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 1), color: 'text-blue-400' }, { id: 'w2', name: '火曜サスペンス', desc: '火曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 2), color: 'text-red-400' }, { id: 'w3', name: '水曜どうでしょう', desc: '水曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 3), color: 'text-cyan-400' }, { id: 'w4', name: '木曜の安らぎ', desc: '木曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 4), color: 'text-green-400' }, { id: 'w5', name: '華金', desc: '金曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 5), color: 'text-yellow-400' }, { id: 'w6', name: '土曜の朝', desc: '土曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 6), color: 'text-indigo-400' }, { id: 'w7', name: '日曜の夜', desc: '日曜日に練習', check: (l) => l.some(x => new Date(x.date).getDay() === 0), color: 'text-rose-400' }, { id: 'w8', name: 'フルコンプ', desc: '全曜日に練習実績あり', check: (l) => { const days = new Set(l.map(x=>new Date(x.date).getDay())); return days.size === 7; }, color: 'text-white' }, { id: 'st1', name: '連日', desc: '2日連続', check: (l) => hasStreak(l,2), color: 'text-lime-300' }, { id: 'st2', name: '三日連続', desc: '3日連続', check: (l) => hasStreak(l,3), color: 'text-lime-400' }, { id: 'st3', name: '五日連続', desc: '5日連続', check: (l) => hasStreak(l,5), color: 'text-lime-500' }, { id: 'st4', name: '一週間', desc: '7日連続', check: (l) => hasStreak(l,7), color: 'text-lime-600' }, { id: 'st5', name: '二週間', desc: '14日連続', check: (l) => hasStreak(l,14), color: 'text-green-500' }, { id: 'st6', name: '一ヶ月', desc: '30日連続', check: (l) => hasStreak(l,30), color: 'text-green-600' }, { id: 'kw1', name: 'スケール', desc: '内容に「スケール」', check: (l) => l.some(x => x.content.includes('スケール')), color: 'text-slate-300' }, { id: 'kw2', name: 'コード', desc: '内容に「コード」', check: (l) => l.some(x => x.content.includes('コード')), color: 'text-slate-300' }, { id: 'kw3', name: 'カッティング', desc: '内容に「カッティング」', check: (l) => l.some(x => x.content.includes('カッティング')), color: 'text-slate-300' }, { id: 'kw4', name: 'アルペジオ', desc: '内容に「アルペジオ」', check: (l) => l.some(x => x.content.includes('アルペジオ')), color: 'text-slate-300' }, { id: 'kw5', name: 'アドリブ', desc: '内容に「アドリブ」', check: (l) => l.some(x => x.content.includes('アドリブ')), color: 'text-slate-300' }, { id: 'kw6', name: 'チョーキング', desc: '内容に「チョーキング」', check: (l) => l.some(x => x.content.includes('チョーキング')), color: 'text-slate-300' }, { id: 'kw7', name: 'スウィープ', desc: '内容に「スウィープ」', check: (l) => l.some(x => x.content.includes('スウィープ')), color: 'text-slate-300' }, { id: 'kw8', name: 'タッピング', desc: '内容に「タッピング」', check: (l) => l.some(x => x.content.includes('タッピング')), color: 'text-slate-300' }, { id: 'kw9', name: '耳コピ', desc: '内容に「耳コピ」', check: (l) => l.some(x => x.content.includes('耳コピ')), color: 'text-slate-300' }, { id: 'kw10', name: '作詞作曲', desc: '内容に「作曲」or「作詞」', check: (l) => l.some(x => x.content.includes('作曲')||x.content.includes('作詞')), color: 'text-slate-300' }, { id: 'kw11', name: '基礎', desc: '内容に「基礎」', check: (l) => l.some(x => x.content.includes('基礎')), color: 'text-slate-300' }, { id: 'kw12', name: '理論', desc: '内容に「理論」', check: (l) => l.some(x => x.content.includes('理論')), color: 'text-slate-300' }, { id: 'kw13', name: '模写', desc: '内容に「コピー」', check: (l) => l.some(x => x.content.includes('コピー')), color: 'text-slate-300' }, { id: 'kw14', name: 'メンテナンス', desc: '内容に「弦交換」or「掃除」', check: (l) => l.some(x => x.content.includes('弦交換')||x.content.includes('掃除')), color: 'text-slate-300' }, { id: 'bpm1', name: '超スロー', desc: 'BPM 40-59', check: (l) => l.some(x => x.bpm >= 40 && x.bpm < 60), color: 'text-blue-200' }, { id: 'bpm2', name: 'ゆったり', desc: 'BPM 60-79', check: (l) => l.some(x => x.bpm >= 60 && x.bpm < 80), color: 'text-blue-300' }, { id: 'bpm3', name: 'ミディアム', desc: 'BPM 100-119', check: (l) => l.some(x => x.bpm >= 100 && x.bpm < 120), color: 'text-blue-400' }, { id: 'bpm4', name: 'アップテンポ', desc: 'BPM 140-159', check: (l) => l.some(x => x.bpm >= 140 && x.bpm < 160), color: 'text-red-400' }, { id: 'bpm5', name: 'ファスト', desc: 'BPM 180-199', check: (l) => l.some(x => x.bpm >= 180 && x.bpm < 200), color: 'text-red-500' }, { id: 'bpm6', name: '超速', desc: 'BPM 200以上', check: (l) => l.some(x => x.bpm >= 200), color: 'text-red-600 animate-pulse' }, { id: 'tool1', name: '録音デビュー', desc: '録音機能を使用', check: (l) => l.some(x => x.audio), color: 'text-pink-400' }, { id: 'tool2', name: '録音マニア', desc: '録音10回以上', check: (l) => l.filter(x => x.audio).length >= 10, color: 'text-pink-500' }, { id: 'tool3', name: 'クリックのみ', desc: 'BPM設定ありで記録', check: (l) => l.some(x => x.bpm > 0), color: 'text-yellow-600' }, { id: 'sp1', name: 'ゾロ目', desc: '11:11 or 22:22', check: (l) => l.some(x => x.time === '11:11' || x.time === '22:22'), color: 'text-yellow-300' }, { id: 'sp2', name: '元旦', desc: '1/1に練習', check: (l) => l.some(x => x.date.includes('/1/1')), color: 'text-red-300' }, { id: 'sp3', name: '大晦日', desc: '12/31に練習', check: (l) => l.some(x => x.date.includes('/12/31')), color: 'text-white' }, { id: 'sp4', name: 'クリスマス', desc: '12/24 or 25に練習', check: (l) => l.some(x => x.date.includes('/12/24')||x.date.includes('/12/25')), color: 'text-green-400' }, { id: 'sp5', name: 'バレンタイン', desc: '2/14に練習', check: (l) => l.some(x => x.date.includes('/2/14')), color: 'text-pink-300' }, { id: 'sp6', name: 'ハロウィン', desc: '10/31に練習', check: (l) => l.some(x => x.date.includes('/10/31')), color: 'text-orange-400' }, { id: 'sp7', name: 'エイプリル', desc: '4/1に練習', check: (l) => l.some(x => x.date.includes('/4/1')), color: 'text-sky-300' }, { id: 'sp8', name: '七夕', desc: '7/7に練習', check: (l) => l.some(x => x.date.includes('/7/7')), color: 'text-blue-300' }, { id: 'sp9', name: 'キリ番', desc: 'ログID下2桁00', check: (l) => l.some(x => String(x.id).endsWith('00')), color: 'text-purple-300' }, { id: 'i1', name: 'ダブルヘッダー', desc: '1日2回練習', check: (l) => { const c={}; l.forEach(x=>c[x.date]=(c[x.date]||0)+1); return Object.values(c).some(n=>n>=2); }, color: 'text-rose-300' }, { id: 'i2', name: 'トリプル', desc: '1日3回練習', check: (l) => { const c={}; l.forEach(x=>c[x.date]=(c[x.date]||0)+1); return Object.values(c).some(n=>n>=3); }, color: 'text-rose-400' }, { id: 'i3', name: '合宿モード', desc: '1日5回練習', check: (l) => { const c={}; l.forEach(x=>c[x.date]=(c[x.date]||0)+1); return Object.values(c).some(n=>n>=5); }, color: 'text-rose-500' } ];
+        const hasStreak = (logs, days) => { if (logs.length < days) return false; const dates = [...new Set(logs.map(l => l.date))].sort((a,b) => new Date(b) - new Date(a)); let streak = 0; for (let i = 0; i < dates.length - 1; i++) { const diff = Math.ceil(Math.abs(new Date(dates[i]) - new Date(dates[i+1])) / (86400000)); if (diff === 1) streak++; else streak = 0; if (streak >= days - 1) return true; } return false; };
+        const Stats = ({ logs }) => { const totalMinutes = logs.reduce((acc, log) => acc + parseInt(log.duration || 0), 0); const totalHours = (totalMinutes / 60).toFixed(1); const unlockedBadges = useMemo(() => ALL_BADGES.filter(b => b.check(logs, totalMinutes)), [logs, totalMinutes]); return ( <div className="col-span-1 md:col-span-2 bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700 h-full"><div className="flex items-center space-x-2 mb-6"><IconAward className="text-yellow-500 w-6 h-6" /><h2 className="text-xl font-bold text-white">実績と目標</h2></div><div className="flex flex-col gap-6"><div><div className="bg-slate-700/50 p-4 rounded-lg mb-4"><h3 className="text-slate-400 text-sm mb-1">総練習時間</h3><div className="flex items-end space-x-2"><span className="text-4xl font-bold text-white">{totalHours}</span><span className="text-lg text-slate-400 mb-1">時間</span></div><div className="mt-2 text-xs text-slate-500">獲得バッジ: <span className="text-white font-bold">{unlockedBadges.length}</span> / {ALL_BADGES.length}</div></div><VisualStats logs={logs} /></div><div className="content-start flex-grow flex flex-col min-h-0"><h3 className="text-xs font-bold text-slate-400 mb-2 flex-shrink-0">獲得済みバッジ ({unlockedBadges.length})</h3><div className="flex-grow overflow-y-auto custom-scrollbar pr-2 max-h-[280px] bg-slate-900/20 rounded-lg p-1 border border-slate-700/30">{unlockedBadges.length === 0 ? ( <div className="text-slate-500 text-xs italic p-4 border border-slate-700 rounded border-dashed text-center h-full flex items-center justify-center">まだバッジがありません。<br/>練習を記録してコレクションを増やそう！</div> ) : ( <div className="grid grid-cols-2 gap-2">{unlockedBadges.map(badge => ( <div key={badge.id} className="p-2 rounded-lg border bg-slate-700/50 border-slate-600 animate-fade-in hover:bg-slate-700 transition-colors flex flex-col justify-center"><div className="flex items-center space-x-1 mb-1"><IconZap className={`w-3 h-3 ${badge.color} flex-shrink-0`} /><span className="font-bold text-xs text-white truncate">{badge.name}</span></div><p className="text-[10px] text-slate-400 leading-tight line-clamp-2">{badge.desc}</p></div> ))}</div> )}</div></div></div></div> ); };
         const PracticeLog = ({ logs, setLogs, tempAudio, setTempAudio }) => {
-            const [content, setContent] = useState('');
-            const [bpm, setBpm] = useState('120');
-            const [duration, setDuration] = useState('30');
-            const [showTemplates, setShowTemplates] = useState(false);
-
-            const recentLogs = useMemo(() => {
-                const unique = []; const map = new Map();
-                for (const log of logs) { if(!map.has(log.content)) { map.set(log.content, true); unique.push(log); } if(unique.length >= 5) break; }
-                return unique;
-            }, [logs]);
-
-            const loadTemplate = (t) => { setContent(t.content); setDuration(t.duration); setBpm(t.bpm || 120); setShowTemplates(false); };
-            const handleSubmit = (e) => {
-                e.preventDefault(); if (!content.trim()) return;
-                const newLog = { id: Date.now(), date: new Date().toLocaleDateString('ja-JP'), time: new Date().toLocaleTimeString('ja-JP', {hour: '2-digit', minute:'2-digit'}), content, bpm, duration: parseInt(duration), audio: tempAudio };
-                const updatedLogs = [newLog, ...logs];
-                try { localStorage.setItem('guitarLogs', JSON.stringify(updatedLogs)); setLogs(updatedLogs); setContent(''); setTempAudio(null); } catch (error) { alert("保存に失敗しました(容量オーバーの可能性があります)"); }
-            };
-            const deleteLog = (id) => { const updatedLogs = logs.filter(log => log.id !== id); setLogs(updatedLogs); localStorage.setItem('guitarLogs', JSON.stringify(updatedLogs)); };
+            const [content, setContent] = useState(''); const [bpm, setBpm] = useState('120'); const [duration, setDuration] = useState('30'); const [showTemplates, setShowTemplates] = useState(false); const recentLogs = useMemo(() => { const unique = []; const map = new Map(); for (const log of logs) { if(!map.has(log.content)) { map.set(log.content, true); unique.push(log); } if(unique.length >= 5) break; } return unique; }, [logs]); const loadTemplate = (t) => { setContent(t.content); setDuration(t.duration); setBpm(t.bpm || 120); setShowTemplates(false); }; const handleSubmit = (e) => { e.preventDefault(); if (!content.trim()) return; const newLog = { id: Date.now(), date: new Date().toLocaleDateString('ja-JP'), time: new Date().toLocaleTimeString('ja-JP', {hour: '2-digit', minute:'2-digit'}), content, bpm, duration: parseInt(duration), audio: tempAudio }; const updatedLogs = [newLog, ...logs]; try { localStorage.setItem('guitarLogs', JSON.stringify(updatedLogs)); setLogs(updatedLogs); setContent(''); setTempAudio(null); } catch (error) { alert("保存に失敗しました"); } }; const deleteLog = (id) => { const updatedLogs = logs.filter(log => log.id !== id); setLogs(updatedLogs); localStorage.setItem('guitarLogs', JSON.stringify(updatedLogs)); }; 
             
-            const exportData = () => {
-                const data = JSON.stringify(logs, null, 2);
-                const blob = new Blob([data], { type: 'application/json' });
+            // Text Export for NotebookLM
+            const exportTextData = () => {
+                const textContent = logs.map(l => 
+                    `[${l.date} ${l.time}] ${l.content} (時間:${l.duration}分 BPM:${l.bpm === '0' ? '-' : l.bpm})`
+                ).join('\n');
+                
+                const blob = new Blob([textContent], { type: 'text/plain' });
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
                 a.href = url;
-                a.download = `guitar_mate_backup_${new Date().toLocaleDateString('ja-JP').replace(/\//g,'-')}.json`;
+                a.download = `guitar_mate_logs_text.txt`;
                 a.click();
                 URL.revokeObjectURL(url);
             };
-            const importData = (e) => {
-                const file = e.target.files[0]; if(!file) return;
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    try {
-                        const imported = JSON.parse(e.target.result);
-                        if(Array.isArray(imported)) {
-                            if(confirm('現在のデータを上書きして復元しますか？')) { setLogs(imported); localStorage.setItem('guitarLogs', JSON.stringify(imported)); alert('復元しました'); }
-                        } else alert('データ形式が不正です');
-                    } catch(err) { alert('読み込み失敗'); }
-                };
-                reader.readAsText(file);
-            };
 
-            return (
-                <div className="col-span-1 md:col-span-6 bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700">
-                    <div className="flex justify-between items-center mb-6">
-                        <div className="flex items-center space-x-2"><IconGuitar className="text-indigo-400 w-6 h-6" /><h2 className="text-xl font-bold text-white">練習ログ</h2></div>
-                        <div className="flex gap-2">
-                            <label className="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1.5 rounded text-white flex items-center border border-slate-600 cursor-pointer" title="バックアップを復元">
-                                <IconDatabase className="w-3 h-3 mr-1"/> 復元
-                                <input type="file" accept=".json" onChange={importData} className="hidden" />
-                            </label>
-                            <button onClick={exportData} className="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1.5 rounded text-white flex items-center border border-slate-600" title="データをファイルに保存"><IconDownload className="w-3 h-3 mr-1"/> 保存</button>
-                            <button onClick={() => setShowTemplates(!showTemplates)} className="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1.5 rounded text-white flex items-center border border-slate-600"><IconList className="w-3 h-3 mr-1"/> 定型</button>
-                        </div>
-                    </div>
-                    {showTemplates && (
-                        <div className="mb-6 p-4 bg-slate-900/80 rounded-lg border border-indigo-500/30">
-                            <h4 className="text-xs font-bold text-slate-400 mb-2">定番メニュー</h4>
-                            <div className="flex flex-wrap gap-2 mb-4">{TEMPLATES.map(t => (<button key={t.id} onClick={() => loadTemplate(t)} className="text-xs bg-slate-800 hover:bg-indigo-900 border border-slate-600 px-2 py-1 rounded text-slate-300 transition-colors">{t.label}</button>))}</div>
-                            {recentLogs.length > 0 && (<><h4 className="text-xs font-bold text-slate-400 mb-2">最近の練習</h4><div className="flex flex-wrap gap-2">{recentLogs.map(l => (<button key={l.id} onClick={() => loadTemplate({content: l.content, duration: l.duration, bpm: l.bpm})} className="text-xs bg-slate-800 hover:bg-indigo-900 border border-slate-600 px-2 py-1 rounded text-slate-300 truncate max-w-[200px] transition-colors">{l.content} ({l.duration}分)</button>))}</div></>)}
-                        </div>
-                    )}
-                    <form onSubmit={handleSubmit} className="mb-8 bg-slate-900/50 p-4 rounded-lg border border-slate-700/50">
-                        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 mb-4">
-                            <div className="md:col-span-6"><label className="block text-xs text-slate-400 mb-1">練習内容</label><input type="text" placeholder="例：クロマチックスケール" className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-white focus:outline-none focus:border-indigo-500" value={content} onChange={(e) => setContent(e.target.value)}/></div>
-                            <div className="md:col-span-3"><label className="block text-xs text-slate-400 mb-1">BPM</label><select className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-white focus:outline-none focus:border-indigo-500" value={bpm} onChange={(e) => setBpm(e.target.value)}>{[0,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200].map(opt => (<option key={opt} value={opt}>{opt === 0 ? '-' : opt}</option>))}</select></div>
-                            <div className="md:col-span-3"><label className="block text-xs text-slate-400 mb-1">時間 (分)</label><select className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-white focus:outline-none focus:border-indigo-500" value={duration} onChange={(e) => setDuration(e.target.value)}>{[5,10,15,20,30,45,60,90,120].map(opt => (<option key={opt} value={opt}>{opt}分</option>))}</select></div>
-                        </div>
-                        {tempAudio && (<div className="mb-4 bg-slate-800/80 p-3 rounded border border-rose-500/30 flex items-center justify-between"><div className="flex items-center text-rose-400 text-sm"><IconMic className="w-4 h-4 mr-2" /><span>録音データあり</span></div><div className="flex items-center gap-2"><audio src={tempAudio} controls className="w-40 h-8" /><button type="button" onClick={() => setTempAudio(null)} className="text-slate-400 hover:text-red-400"><IconX className="w-5 h-5" /></button></div></div>)}
-                        <div className="flex items-end justify-end"><button type="submit" className="w-full md:w-auto bg-indigo-500 hover:bg-indigo-600 text-white px-6 py-2 rounded font-bold transition-colors flex items-center justify-center"><IconPlus className="w-4 h-4 mr-1" /> 記録する</button></div>
-                    </form>
-                    <div className="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">
-                        {logs.length === 0 && (<div className="text-center text-slate-500 py-8">まだ記録がありません。</div>)}
-                        {logs.map(log => (
-                        <div key={log.id} className="group bg-slate-700/30 hover:bg-slate-700/60 transition-colors p-4 rounded-lg flex flex-col gap-2 border border-slate-700/50">
-                            <div className="flex justify-between items-start"><div className="flex-1"><div className="flex items-center gap-2 text-xs text-slate-400 mb-1"><span>{log.date}</span><span>{log.time}</span></div><div className="flex flex-wrap items-center gap-2 mb-2"><span className="font-medium text-white">{log.content}</span>{log.bpm && log.bpm !== '0' && (<span className="px-2 py-0.5 rounded text-xs bg-slate-600 text-slate-300 flex items-center"><IconActivity className="w-3 h-3 mr-1" /> BPM {log.bpm}</span>)}</div></div><div className="flex items-center gap-2"><div className="flex items-center text-indigo-300 bg-indigo-500/10 px-3 py-1 rounded-full text-sm font-bold whitespace-nowrap"><IconClock className="w-3 h-3 mr-1" />{log.duration}min</div><button onClick={() => deleteLog(log.id)} className="text-slate-500 hover:text-red-400 transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-2"><IconTrash className="w-4 h-4" /></button></div></div>
-                            {log.audio && (<div className="mt-2 bg-slate-800/50 p-2 rounded-lg border border-slate-700 flex items-center gap-2"><IconMusic className="w-4 h-4 text-indigo-400 shrink-0" /><audio src={log.audio} controls className="w-full h-8" /></div>)}
-                        </div>
-                        ))}
-                    </div>
-                </div>
-            );
+            const exportData = () => { const data = JSON.stringify(logs, null, 2); const blob = new Blob([data], { type: 'application/json' }); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `guitar_mate_backup_${new Date().toLocaleDateString('ja-JP').replace(/\//g,'-')}.json`; a.click(); URL.revokeObjectURL(url); }; const importData = (e) => { const file = e.target.files[0]; if(!file) return; const reader = new FileReader(); reader.onload = (e) => { try { const imported = JSON.parse(e.target.result); if(Array.isArray(imported)) { if(confirm('現在のデータを上書きして復元しますか？')) { setLogs(imported); localStorage.setItem('guitarLogs', JSON.stringify(imported)); alert('復元しました'); } } else alert('データ形式が不正です'); } catch(err) { alert('読み込み失敗'); } }; reader.readAsText(file); };
+            return ( <div className="col-span-1 md:col-span-6 bg-slate-800 p-6 rounded-xl shadow-lg border border-slate-700"><div className="flex justify-between items-center mb-6"><div className="flex items-center space-x-2"><IconGuitar className="text-indigo-400 w-6 h-6" /><h2 className="text-xl font-bold text-white">練習ログ</h2></div><div className="flex gap-2"><label className="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1.5 rounded text-white flex items-center border border-slate-600 cursor-pointer" title="バックアップを復元"><IconDatabase className="w-3 h-3 mr-1"/> 復元<input type="file" accept=".json" onChange={importData} className="hidden" /></label><button onClick={exportData} className="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1.5 rounded text-white flex items-center border border-slate-600" title="データをファイルに保存(JSON)"><IconDownload className="w-3 h-3 mr-1"/> 保存</button><button onClick={exportTextData} className="text-xs bg-indigo-600 hover:bg-indigo-500 px-2 py-1.5 rounded text-white flex items-center border border-indigo-500" title="NotebookLM用にテキスト形式で保存"><IconFileText className="w-3 h-3 mr-1"/> テキスト保存</button><button onClick={() => setShowTemplates(!showTemplates)} className="text-xs bg-slate-700 hover:bg-slate-600 px-2 py-1.5 rounded text-white flex items-center border border-slate-600"><IconList className="w-3 h-3 mr-1"/> 定型</button></div></div>{showTemplates && (<div className="mb-6 p-4 bg-slate-900/80 rounded-lg border border-indigo-500/30"><h4 className="text-xs font-bold text-slate-400 mb-2">定番メニュー</h4><div className="flex flex-wrap gap-2 mb-4">{TEMPLATES.map(t => (<button key={t.id} onClick={() => loadTemplate(t)} className="text-xs bg-slate-800 hover:bg-indigo-900 border border-slate-600 px-2 py-1 rounded text-slate-300 transition-colors">{t.label}</button>))}</div>{recentLogs.length > 0 && (<><h4 className="text-xs font-bold text-slate-400 mb-2">最近の練習</h4><div className="flex flex-wrap gap-2">{recentLogs.map(l => (<button key={l.id} onClick={() => loadTemplate({content: l.content, duration: l.duration, bpm: l.bpm})} className="text-xs bg-slate-800 hover:bg-indigo-900 border border-slate-600 px-2 py-1 rounded text-slate-300 truncate max-w-[200px] transition-colors">{l.content} ({l.duration}分)</button>))}</div></>)}</div>)}<form onSubmit={handleSubmit} className="mb-8 bg-slate-900/50 p-4 rounded-lg border border-slate-700/50"><div className="grid grid-cols-1 md:grid-cols-12 gap-4 mb-4"><div className="md:col-span-6"><label className="block text-xs text-slate-400 mb-1">練習内容</label><input type="text" placeholder="例：クロマチックスケール" className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-white focus:outline-none focus:border-indigo-500" value={content} onChange={(e) => setContent(e.target.value)}/></div><div className="md:col-span-3"><label className="block text-xs text-slate-400 mb-1">BPM</label><select className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-white focus:outline-none focus:border-indigo-500" value={bpm} onChange={(e) => setBpm(e.target.value)}>{[0,60,70,80,90,100,110,120,130,140,150,160,170,180,190,200].map(opt => (<option key={opt} value={opt}>{opt === 0 ? '-' : opt}</option>))}</select></div><div className="md:col-span-3"><label className="block text-xs text-slate-400 mb-1">時間 (分)</label><select className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-white focus:outline-none focus:border-indigo-500" value={duration} onChange={(e) => setDuration(e.target.value)}>{[5,10,15,20,30,45,60,90,120].map(opt => (<option key={opt} value={opt}>{opt}分</option>))}</select></div></div>{tempAudio && (<div className="mb-4 bg-slate-800/80 p-3 rounded border border-rose-500/30 flex items-center justify-between"><div className="flex items-center text-rose-400 text-sm"><IconMic className="w-4 h-4 mr-2" /><span>録音データあり</span></div><div className="flex items-center gap-2"><audio src={tempAudio} controls className="w-40 h-8" /><button type="button" onClick={() => setTempAudio(null)} className="text-slate-400 hover:text-red-400"><IconX className="w-5 h-5" /></button></div></div>)}<div className="flex items-end justify-end"><button type="submit" className="w-full md:w-auto bg-indigo-500 hover:bg-indigo-600 text-white px-6 py-2 rounded font-bold transition-colors flex items-center justify-center"><IconPlus className="w-4 h-4 mr-1" /> 記録する</button></div></form><div className="space-y-3 max-h-80 overflow-y-auto pr-2 custom-scrollbar">{logs.length === 0 && (<div className="text-center text-slate-500 py-8">まだ記録がありません。</div>)}{logs.map(log => (<div key={log.id} className="group bg-slate-700/30 hover:bg-slate-700/60 transition-colors p-4 rounded-lg flex flex-col gap-2 border border-slate-700/50"><div className="flex justify-between items-start"><div className="flex-1"><div className="flex items-center gap-2 text-xs text-slate-400 mb-1"><span>{log.date}</span><span>{log.time}</span></div><div className="flex flex-wrap items-center gap-2 mb-2"><span className="font-medium text-white">{log.content}</span>{log.bpm && log.bpm !== '0' && (<span className="px-2 py-0.5 rounded text-xs bg-slate-600 text-slate-300 flex items-center"><IconActivity className="w-3 h-3 mr-1" /> BPM {log.bpm}</span>)}</div></div><div className="flex items-center gap-2"><div className="flex items-center text-indigo-300 bg-indigo-500/10 px-3 py-1 rounded-full text-sm font-bold whitespace-nowrap"><IconClock className="w-3 h-3 mr-1" />{log.duration}min</div><button onClick={() => deleteLog(log.id)} className="text-slate-500 hover:text-red-400 transition-colors opacity-100 sm:opacity-0 sm:group-hover:opacity-100 p-2"><IconTrash className="w-4 h-4" /></button></div></div>{log.audio && (<div className="mt-2 bg-slate-800/50 p-2 rounded-lg border border-slate-700 flex items-center gap-2"><IconMusic className="w-4 h-4 text-indigo-400 shrink-0" /><audio src={log.audio} controls className="w-full h-8" /></div>)}</div>))}</div></div> );
         };
 
         const App = () => {
@@ -661,14 +742,17 @@
                     <div className="grid grid-cols-1 md:grid-cols-6 gap-6 mb-6">
                         {/* Row 1: Tools */}
                         <div className="md:col-span-3 h-full"><Metronome getAudioContext={getAudioContext} /></div>
-                        <div className="md:col-span-3 h-full"><Recorder setTempAudio={setTempAudio} getAudioContext={getAudioContext} /></div>
+                        <div className="md:col-span-3 h-full"><TimerStopwatch /></div>
                         
-                        {/* Row 2: Main Player & Stats */}
+                        {/* Row 2: Recorder & BackingTrack */}
+                        <div className="md:col-span-2 h-full"><Recorder setTempAudio={setTempAudio} getAudioContext={getAudioContext} /></div>
                         <div className="md:col-span-4 h-full"><BackingTrack getAudioContext={getAudioContext} /></div>
-                        <div className="md:col-span-2 h-full"><Stats logs={logs} /></div>
 
                         {/* Row 3: Logs */}
                         <div className="md:col-span-6"><PracticeLog logs={logs} setLogs={setLogs} tempAudio={tempAudio} setTempAudio={setTempAudio}/></div>
+                        
+                        {/* Row 4: Stats */}
+                        <div className="md:col-span-6"><Stats logs={logs} /></div>
                     </div>
 
                     <footer className="text-center text-slate-600 text-xs py-8">&copy; {new Date().getFullYear()} Guitar Mate - Your Pocket Practice Room</footer>
